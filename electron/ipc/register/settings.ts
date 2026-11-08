@@ -1,7 +1,12 @@
+import { recordingFocus } from "../recording/focus";
 import { createCountdownController } from "../../countdownController";
 import fs from "node:fs/promises";
 import { app, BrowserWindow, ipcMain } from "electron";
-import { hasAppSetting, readAppSettingsStore, writeAppSettingsStore } from "../../appSettingsStore";
+import {
+	hasAppSetting,
+	readAppSettingsStoreWithStatus,
+	writeAppSettingsStore,
+} from "../../appSettingsStore";
 import { hideCursor } from "../../cursorHider";
 import { createCountdownWindow } from "../../windows";
 import { COUNTDOWN_SETTINGS_FILE, RECORDINGS_SETTINGS_FILE, SHORTCUTS_FILE } from "../constants";
@@ -11,6 +16,7 @@ import {
 } from "../settings/recordingPreferencesStore";
 import {
 	countdownInProgress,
+	selectedSource,
 	countdownRemaining,
 	setCountdownInProgress,
 	setCountdownRemaining,
@@ -70,10 +76,17 @@ export function registerSettingsHandlers() {
 				return;
 			}
 
-			const store = readAppSettingsStore();
+			const result = readAppSettingsStoreWithStatus();
+			if (!result.success) {
+				event.returnValue = { success: false, value: null };
+				return;
+			}
+			const store = result.store;
+			const found = hasAppSetting(store, key);
 			event.returnValue = {
 				success: true,
-				value: hasAppSetting(store, key) ? store[key] : null,
+				found,
+				value: found ? store[key] : null,
 			};
 		} catch (error) {
 			console.error("Failed to read app setting:", error);
@@ -88,7 +101,12 @@ export function registerSettingsHandlers() {
 				return;
 			}
 
-			const store = readAppSettingsStore();
+			const result = readAppSettingsStoreWithStatus();
+			if (!result.success) {
+				event.returnValue = { success: false };
+				return;
+			}
+			const store = result.store;
 			store[key] = value;
 			writeAppSettingsStore(store);
 			event.returnValue = { success: true };
@@ -201,8 +219,17 @@ export function registerSettingsHandlers() {
 		setCountdownRemaining(remaining);
 		setCountdownInProgress(remaining !== null);
 	});
-	ipcMain.handle("start-countdown", (_, seconds: number) => countdown.start(seconds));
-	ipcMain.handle("cancel-countdown", () => countdown.cancel());
+	ipcMain.handle("start-countdown", async (_, seconds: number) => {
+		if (countdownInProgress) return countdown.start(seconds);
+		void recordingFocus.start(selectedSource);
+		const result = await countdown.start(seconds);
+		if (!result.success) recordingFocus.stop();
+		return result;
+	});
+	ipcMain.handle("cancel-countdown", () => {
+		recordingFocus.stop();
+		return countdown.cancel();
+	});
 
 	ipcMain.handle("get-active-countdown", () => {
 		return {
