@@ -1,6 +1,7 @@
 import { Sprite } from "pixi.js";
 import { DEFAULT_WEBCAM_ROUNDNESS } from "@/components/video-editor/types";
 import { isWebcamVisibleAtSourceTime } from "@/components/video-editor/videoPlayback/webcamSync";
+import { getWebcamEdgeFeatherPixels } from "@/components/video-editor/webcamEdgeFeather";
 import { WebcamMotionBlur } from "@/components/video-editor/webcamMotionBlur";
 import {
 	getCropMatchedWebcamHeightPercent,
@@ -14,7 +15,6 @@ import { drawSquircleOnGraphics } from "@/lib/geometry/squircle";
 import type { FrameRenderContext } from "./modernFrameRenderer";
 import type { MutableVideoTextureSource, WebcamLayoutCache } from "./modernFrameTypes";
 import { applyCoverLayoutToSprite, areNearlyEqual } from "./modernFrameUtils";
-import { getWebcamShadowStrength } from "./shadowProfile";
 
 /** Owns webcam resources for one export renderer. */
 export class FrameWebcam {
@@ -148,6 +148,7 @@ export class FrameWebcam {
 		frameTimeMs = referenceTimeSeconds * 1000,
 	): void {
 		const webcam = this.context.config.webcam;
+		const webcamShape = webcam?.shape ?? "squircle";
 		if (
 			!webcam?.enabled ||
 			!isWebcamVisibleAtSourceTime(webcam, referenceTimeSeconds) ||
@@ -231,9 +232,10 @@ export class FrameWebcam {
 			aspectSourceWidth,
 			aspectSourceHeight,
 			webcam.cropRegion,
+			webcamShape,
 		);
 		const dimensions = getWebcamOverlayDimensionsPx({
-			shape: webcam.shape,
+			shape: webcamShape,
 			containerWidth: this.context.config.width,
 			containerHeight: this.context.config.height,
 			widthPercent,
@@ -257,14 +259,13 @@ export class FrameWebcam {
 			webcam.roundness ?? DEFAULT_WEBCAM_ROUNDNESS,
 			dimensions.width,
 			dimensions.height,
-			webcam.shape,
+			webcamShape,
 		);
-		const shadowStrength = getWebcamShadowStrength(webcam.shadow ?? 0);
 
 		this.context.scene.webcamRootContainer.visible = true;
 
 		const nextLayout: WebcamLayoutCache = {
-			exponent: getWebcamShapeExponent(webcam.shape),
+			exponent: getWebcamShapeExponent(webcamShape),
 			sourceWidth: renderableWebcamSource.width,
 			sourceHeight: renderableWebcamSource.height,
 			width: dimensions.width,
@@ -278,9 +279,13 @@ export class FrameWebcam {
 		// Composite the clipped image before applying its shadow. A separate black
 		// silhouette and a GPU stencil have different edge coverage, exposing a rim.
 		const blur = this.webcamMotionBlur.render({
-			renderStill: shadowStrength > 0,
+			renderStill: true,
+			edgeFeatherPx: getWebcamEdgeFeatherPixels(
+				webcam.previewFrame,
+				this.context.config.width,
+			),
 			layout: { x: position.x, y: position.y, ...dimensions, radius },
-			shape: webcam.shape,
+			shape: webcamShape,
 			timeMs: frameTimeMs,
 			playing: true,
 			amount: this.context.config.zoomMotionBlur ?? 0,
@@ -293,6 +298,8 @@ export class FrameWebcam {
 		if (blur) {
 			if (!this.webcamBlurSprite) {
 				const texture = this.context.textures.createTextureFromSource(blur.canvas);
+				// The compositor retains and grows its backing canvas through zooms.
+				// Notify Sprite when the texture frame grows with that canvas.
 				texture.dynamic = true;
 				this.webcamBlurSprite = new Sprite(texture);
 				this.context.scene.webcamRootContainer.addChild(this.webcamBlurSprite);

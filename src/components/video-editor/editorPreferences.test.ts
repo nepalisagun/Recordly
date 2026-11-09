@@ -83,16 +83,19 @@ describe("editorPreferences", () => {
 		Reflect.deleteProperty(globalThis, "electronAPI");
 	});
 
-	it("drops the retired automatic zoom preference from stored settings", () => {
-		vi.stubGlobal(
-			"localStorage",
-			createStorageMock({
-				[EDITOR_PREFERENCES_STORAGE_KEY]: JSON.stringify({
-					autoApplyFreshRecordingAutoZooms: true,
+	it("defaults automatic zooms on and preserves the saved opt-out", () => {
+		expect(normalizeEditorPreferences({}).autoApplyFreshRecordingAutoZooms).toBe(true);
+		for (const enabled of [false, true]) {
+			vi.stubGlobal(
+				"localStorage",
+				createStorageMock({
+					[EDITOR_PREFERENCES_STORAGE_KEY]: JSON.stringify({
+						autoApplyFreshRecordingAutoZooms: enabled,
+					}),
 				}),
-			}),
-		);
-		expect(loadEditorPreferences()).not.toHaveProperty("autoApplyFreshRecordingAutoZooms");
+			);
+			expect(loadEditorPreferences().autoApplyFreshRecordingAutoZooms).toBe(enabled);
+		}
 	});
 
 	it("normalizes invalid values back to safe defaults", () => {
@@ -121,7 +124,9 @@ describe("editorPreferences", () => {
 	it("saves webcam controls independently and retains a zero shadow after reload", () => {
 		vi.stubGlobal("localStorage", createStorageMock());
 		stubElectronSettings();
-		saveEditorPreferences({ webcam: { shadow: 0.2, width: 55, roundness: 69 } });
+		saveEditorPreferences({
+			webcam: { shadow: 0.2, width: 55, roundness: 69 },
+		});
 		saveEditorPreferences({ webcam: { width: 60 } });
 		expect(loadEditorPreferences().webcam).toMatchObject({
 			shadow: 0.2,
@@ -660,5 +665,9 @@ describe("camera shape preferences", () => {
 		expect(
 			normalizeEditorPreferences({ webcam: { shape: "squircle" } as never }).webcam.shape,
 		).toBe("squircle");
+		expect(
+			normalizeEditorPreferences({ webcam: { shape: "rectangle", roundness: 0 } as never })
+				.webcam,
+		).toMatchObject({ shape: "rectangle", roundness: 0 });
 	});
 });

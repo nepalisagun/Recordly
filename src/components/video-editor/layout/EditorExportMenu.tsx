@@ -1,7 +1,8 @@
 import { useI18n as useUiLocale } from "@/contexts/I18nContext";
 import "./EditorExportMenu.css";
 import { Card, ProgressBar, Tag, TagGroup } from "@heroui/react";
-import { Export, HardDrive, LinkSimple } from "@phosphor-icons/react";
+import { HardDrive, LinkSimple } from "@phosphor-icons/react";
+import { RecordlyMark } from "@/components/ui/RecordlyMark";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ExportErrorReportButton } from "@/components/feedback/ExportErrorReportButton";
@@ -17,6 +18,8 @@ import type { useExportSession } from "../export/useExportSession";
 import type { useExportSettings } from "../export/useExportSettings";
 import type { useExportStatusViewModel } from "../export/useExportStatusViewModel";
 import { GifOptimizationResult } from "../GifOptimizationResult";
+import glassStyles from "../timeline/ItemGlass.module.css";
+import { ExportPaperStack } from "./ExportPaperStack";
 
 type Props = {
 	projectRevision?: string;
@@ -36,7 +39,6 @@ type Props = {
 	handleRetrySaveExport: () => void;
 	handleStartExportFromDropdown: () => void;
 	revealExportedFile: () => void;
-	exportMessage: string | null;
 	projectTitle: string;
 	prepareExportForShare: () => Promise<string | undefined>;
 	onRequestShareSignIn: () => void;
@@ -90,7 +92,6 @@ export function EditorExportMenu(props: Props) {
 		handleRetrySaveExport,
 		handleStartExportFromDropdown,
 		revealExportedFile,
-		exportMessage,
 	} = props;
 	const {
 		exportQuality,
@@ -123,16 +124,8 @@ export function EditorExportMenu(props: Props) {
 		hasPendingExportSave,
 	} = exportSession;
 	const { gifOutputDimensions, mp4OutputDimensions } = exportDimensions;
-	const {
-		isExportPreparing,
-		isGifFinalizing,
-		exportDisplayProgress,
-		isExportSaving,
-		isRenderingAudio,
-		isExportFinalSaveIndeterminate,
-		exportFinalizingProgress,
-		exportPercentLabel,
-	} = exportStatus;
+	const { isGifFinalizing, exportDisplayProgress, isExportSaving, exportPercentLabel } =
+		exportStatus;
 
 	const settingsForm = (
 		<ExportSettingsMenu
@@ -192,7 +185,7 @@ export function EditorExportMenu(props: Props) {
 						type="button"
 						className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 px-4.5"
 					>
-						<Export className="h-4 w-4" />
+						<RecordlyMark />
 						<span className="text-sm font-semibold tracking-tight">
 							{uiText("ui.publish")}
 						</span>
@@ -290,37 +283,24 @@ export function EditorExportMenu(props: Props) {
 												{t("common.actions.cancel")}
 											</Button>
 										</div>
+										<ExportPaperStack />
 										<ProgressBar
+											className="export-progress"
 											aria-label={t(
 												"editor.exportStatus.exporting",
 												"Exporting",
 											)}
-											isIndeterminate={
-												isExportPreparing ||
-												exportSession.isOptimizingGif ||
-												isExportSaving ||
-												isExportFinalSaveIndeterminate
-											}
-											value={Math.min(
-												isRenderingAudio
-													? (exportProgress?.audioProgress ?? 0) * 100
-													: (exportFinalizingProgress ??
-															exportDisplayProgress),
-												100,
-											)}
+											value={exportDisplayProgress}
 										>
 											<ProgressBar.Track>
-												<ProgressBar.Fill />
+												<ProgressBar.Fill
+													className={`${glassStyles.glassBlue} export-progress-fill`}
+												/>
 											</ProgressBar.Track>
 										</ProgressBar>
 										{exportPercentLabel ? (
 											<p className="mt-2 text-xs text-muted-foreground">
 												{exportPercentLabel}
-											</p>
-										) : null}
-										{exportMessage ? (
-											<p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-												{exportMessage}
 											</p>
 										) : null}
 									</Card>

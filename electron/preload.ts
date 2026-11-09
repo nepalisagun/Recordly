@@ -551,7 +551,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.invoke("create-project-file", data, thumbnail),
 	renameLibraryProject: (path: string, name: string) =>
 		ipcRenderer.invoke("rename-library-project", path, name),
-	trashProjectFiles: (paths: string[]) => ipcRenderer.invoke("trash-project-files", paths),
+	reviewProjectDeletion: (paths: string[], protectedSources?: string[]) =>
+		ipcRenderer.invoke("review-project-deletion", paths, protectedSources),
+	trashProjectFiles: (
+		paths: string[],
+		options?: { includeSources?: boolean; protectedSources?: string[] },
+	) => ipcRenderer.invoke("trash-project-files", paths, options),
 	showProjectDashboard: () => ipcRenderer.invoke("show-project-dashboard"),
 	openLoadingRecordingEditor: () => ipcRenderer.invoke("open-loading-recording-editor"),
 	waitForRecordingEditor: () => ipcRenderer.invoke("wait-for-recording-editor"),
@@ -748,6 +753,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getMediaPermissionStatus: () => {
 		return ipcRenderer.invoke("get-media-permission-status");
 	},
+	requestMediaPermission: (device: "microphone" | "camera") =>
+		ipcRenderer.invoke("request-media-permission", device),
 	openMediaPermissionPreferences: (device: "microphone" | "camera") => {
 		return ipcRenderer.invoke("open-media-permission-preferences", device);
 	},
@@ -942,8 +949,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.invoke("list-recordings", includeSources),
 	setRecordingsRemoved: (paths: string[], removed: boolean) =>
 		ipcRenderer.invoke("set-recordings-removed", paths, removed),
-	trashRecordingSources: (paths: string[]) =>
-		ipcRenderer.invoke("trash-recording-sources", paths),
+	trashRecordingSources: (paths: string[], protectedSources?: string[]) =>
+		ipcRenderer.invoke("trash-recording-sources", paths, protectedSources),
 	importRecording: (
 		currentPath: string,
 		recordingPath: string,
@@ -1034,6 +1041,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getCurrentUpdateToastPayload: () => {
 		return ipcRenderer.invoke("get-current-update-toast-payload");
 	},
+	listReleaseVersions: () => ipcRenderer.invoke("list-release-versions"),
+	downloadReleaseVersion: (tag: string) => ipcRenderer.invoke("download-release-version", tag),
 	getUpdateStatusSummary: () => {
 		return ipcRenderer.invoke("get-update-status-summary");
 	},

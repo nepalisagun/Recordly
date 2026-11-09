@@ -1,4 +1,4 @@
-import { Dropdown, ProgressBar } from "@heroui/react";
+import { ProgressBar } from "@heroui/react";
 import {
 	Children,
 	type ComponentProps,
@@ -94,6 +94,56 @@ beforeEach(() => {
 });
 
 describe("webcam settings controls", () => {
+	it("keeps geometry sliders in Advanced without changing the selected shape", () => {
+		for (const shape of ["circle", "squircle", "rectangle"] as const) {
+			const webcam = {
+				...DEFAULT_EDITOR_PREFERENCES.webcam,
+				enabled: true,
+				sourcePath: "/camera.mp4",
+				shape,
+				roundness: 69,
+			};
+			const basic = webcamView({ advanced: false, webcam });
+			const labels = elements(basic)
+				.filter((element) => element.type === SliderControl)
+				.map((element) => (element.props as { label?: string }).label);
+			expect(labels).not.toContain("Webcam Width");
+			expect(labels).not.toContain("Webcam Height");
+			expect(labels).not.toContain("effects.webcamRoundness");
+			const advanced = webcamView({ advanced: true, webcam });
+			expect(
+				control(advanced, SliderControl, (props) => props.label === "Webcam Width").value,
+			).toBe(webcam.width);
+			if (shape !== "circle")
+				expect(
+					control(
+						advanced,
+						SliderControl,
+						(props) => props.label === "effects.webcamRoundness",
+					).value,
+				).toBe(69);
+		}
+	});
+
+	it("selects a 16:9 rectangle retaining Square roundness, footage and timing", () => {
+		const onWebcamChange = vi.fn();
+		const tree = webcamView({ onWebcamChange });
+		control(tree, ChoiceGroup, (props) => props["aria-label"] === "Shape").onValueChange?.(
+			"rectangle",
+		);
+		expect(onWebcamChange).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				shape: "rectangle",
+				roundness: 20,
+				sourcePath: "/recordings/camera.mp4",
+				width: expect.closeTo(53.333333, 4),
+				height: 30,
+				timeOffsetMs: 75,
+				visibleRanges: [{ startMs: 100, endMs: 2500 }],
+			}),
+		);
+	});
+
 	it("changes width and legacy size together while preserving footage and timing", () => {
 		const onWebcamChange = vi.fn();
 		const tree = webcamView({ onWebcamChange });
@@ -102,7 +152,7 @@ describe("webcam settings controls", () => {
 			expect.objectContaining({
 				width: 55,
 				size: 55,
-				height: 40,
+				height: 55,
 				sourcePath: "/recordings/camera.mp4",
 				timeOffsetMs: 75,
 				visibleRanges: [{ startMs: 100, endMs: 2500 }],
@@ -148,7 +198,7 @@ describe("webcam settings controls", () => {
 		const region: CropRegion = { x: 0, y: 0, width: 0.5, height: 1 };
 		crop.onCropChange(region, { src: null, width: 100, height: 100 });
 		expect(onWebcamChange).toHaveBeenLastCalledWith(
-			expect.objectContaining({ cropRegion: region, width: 40, height: 80 }),
+			expect.objectContaining({ cropRegion: region, width: 40, height: 40 }),
 		);
 		crop.onCropChange(region);
 		expect(onWebcamChange).toHaveBeenLastCalledWith(
@@ -183,11 +233,7 @@ describe("caption generation settings controls", () => {
 		{ whisperModelPath: "/models/small.bin", isGeneratingCaptions: false, disabled: false },
 	])("guards generation for model availability and progress: %j", ({ disabled, ...state }) => {
 		const tree = captionView(state);
-		const label = state.isGeneratingCaptions
-			? "Generating..."
-			: !state.whisperModelPath
-				? "Download Model"
-				: "Regenerate Captions";
+		const label = state.isGeneratingCaptions ? "Generating..." : "Regenerate Captions";
 		expect(control(tree, Button, (props) => props.children === label).disabled).toBe(disabled);
 	});
 
@@ -199,29 +245,26 @@ describe("caption generation settings controls", () => {
 			whisperModelDownloadProgress: 42.7,
 		});
 		expect(
-			control(tree, Dropdown.Item, (props) => props.id === "clear-captions").isDisabled,
+			control(tree, Button, (props) => props["aria-label"] === "Clear Captions").disabled,
 		).toBe(true);
 		expect(control(tree, Button, (props) => props.disabled === true).disabled).toBe(true);
 		expect(control(tree, ProgressBar).value).toBe(42.7);
-		expect(
-			control(tree, Dropdown.Item, (props) => props.id === "delete-model").isDisabled,
-		).toBe(true);
+		expect(control(tree, Button, (props) => props.children === "Delete Model").disabled).toBe(
+			true,
+		);
 	});
 
-	it("routes the primary action to setup until the model is ready", () => {
-		const onDownloadWhisperSmallModel = vi.fn();
+	it("routes the primary action to generation even before the model is ready", () => {
 		const onGenerateAutoCaptions = vi.fn();
 		const tree = captionView({
 			whisperModelPath: null,
 			whisperModelDownloadStatus: "idle",
-			onDownloadWhisperSmallModel,
 			onGenerateAutoCaptions,
 		});
-		control(tree, Button, (props) => props.children === "Download Model").onClick?.(
+		control(tree, Button, (props) => props.children === "Regenerate Captions").onClick?.(
 			{} as never,
 		);
-		expect(onDownloadWhisperSmallModel).toHaveBeenCalledOnce();
-		expect(onGenerateAutoCaptions).not.toHaveBeenCalled();
+		expect(onGenerateAutoCaptions).toHaveBeenCalledOnce();
 	});
 
 	it("changes animation without resetting visibility or transcription preferences", () => {

@@ -4,6 +4,7 @@ import {
 	getWebcamMediaTargetTimeSeconds,
 	isWebcamVisibleAtSourceTime,
 } from "@/components/video-editor/videoPlayback/webcamSync";
+import { getWebcamEdgeFeatherPixels } from "@/components/video-editor/webcamEdgeFeather";
 import {
 	getCropMatchedWebcamHeightPercent,
 	getWebcamCornerRadiusPx,
@@ -105,6 +106,7 @@ export function drawWebcamOverlay(
 	height: number,
 ): void {
 	const webcam = context.config.webcam;
+	const webcamShape = webcam?.shape ?? "squircle";
 	const webcamDecodedFrame = context.webcamDecodedFrame;
 	const webcamVideo = context.webcamVideoElement;
 	if (
@@ -212,9 +214,10 @@ export function drawWebcamOverlay(
 		sourceWidth,
 		sourceHeight,
 		webcam.cropRegion,
+		webcamShape,
 	);
 	const dimensions = getWebcamOverlayDimensionsPx({
-		shape: webcam.shape,
+		shape: webcamShape,
 		containerWidth: width,
 		containerHeight: height,
 		widthPercent,
@@ -238,14 +241,15 @@ export function drawWebcamOverlay(
 		webcam.roundness ?? DEFAULT_WEBCAM_ROUNDNESS,
 		dimensions.width,
 		dimensions.height,
-		webcam.shape,
+		webcamShape,
 	);
 	// Keep fractional layout coordinates in one backing store; rounding a small
 	// bubble canvas and stretching it back shifts the clipped video at the edge.
 	const overlay = context.webcamMotionBlur.render({
 		renderStill: true,
+		edgeFeatherPx: getWebcamEdgeFeatherPixels(webcam.previewFrame, width),
 		layout: { x, y, ...dimensions, radius },
-		shape: webcam.shape,
+		shape: webcamShape,
 		timeMs: context.webcamMotionTimeMs,
 		playing: true,
 		amount: context.config.zoomMotionBlur ?? 0,

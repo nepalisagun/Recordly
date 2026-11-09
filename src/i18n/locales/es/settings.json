@@ -130,10 +130,11 @@
 			}
 		},
 		"cursorMotionBlur": "Desenfoque de movimiento del cursor",
-		"cursorClickBounce": "Rebote de clic del cursor",
+		"cursorClickBounce": "Escalar al hacer clic",
+		"cursorClickBounceStrength": "Intensidad de escala al hacer clic",
 		"cursorClickBounceDuration": "Velocidad del rebote",
 		"cursorSway": "Balanceo del cursor",
-		"cursorIdleHide": "Ocultar el cursor al estar inactivo",
+		"cursorIdleHide": "Ocultar al estar inactivo",
 		"cursorIdleHideDescription": "Tras una breve espera, el cursor se desvanece durante las pausas largas. Al moverlo o hacer clic, vuelve a aparecer.",
 		"cursorIdleFadeDelay": "Espera antes del desvanecimiento",
 		"cursorIdleDuration": "Detección de inactividad",
@@ -144,7 +145,7 @@
 		"webcamFootageDescription": "No hay metraje de cámara vinculado a este video",
 		"uploadWebcamFootage": "Subir metraje",
 		"replaceWebcamFootage": "Reemplazar metraje",
-		"removeWebcamFootage": "Quitar metraje",
+		"removeWebcamFootage": "Quitar del proyecto",
 		"webcamFootageAdded": "Metraje de cámara vinculado",
 		"webcamFootageRemoved": "Metraje de cámara eliminado",
 		"webcamSize": "Tamaño de cámara",
@@ -167,32 +168,31 @@
 		"paddingRight": "Derecho",
 		"removeBackground": "Quitar fondo",
 		"devSection": "Desarrollo",
-		"devSectionHint": "Controles de prueba temporales para la captura nativa y el ajuste del movimiento.",
 		"nativeCaptureWarningTester": "Advertencia de captura nativa",
 		"nativeCaptureWarningTesterUnavailable": "Este proyecto está marcado actualmente como no compatible con la captura nativa.",
 		"nativeCaptureWarningTesterAvailable": "Este proyecto no está marcado como no compatible, pero puedes abrir el diálogo para probar la interfaz.",
 		"openNativeCaptureWarning": "Abrir advertencia",
 		"cameraDebugTuning": "Ajuste de depuración de cámara",
-		"cameraDebugTuningHint": "Controles de ajuste del resorte para el movimiento de cámara, solo para desarrollo.",
 		"cameraSpringStiffnessMultiplier": "Rigidez de cámara",
 		"cameraSpringDampingMultiplier": "Amortiguación de cámara",
 		"cameraSpringMassMultiplier": "Masa de cámara",
 		"cursorDebugTuning": "Ajuste de depuración del cursor",
-		"cursorDebugTuningHint": "Controles de ajuste del resorte, solo para desarrollo.",
 		"cursorSpringStiffnessMultiplier": "Rigidez del resorte",
 		"cursorSpringDampingMultiplier": "Amortiguación del resorte",
 		"cursorSpringMassMultiplier": "Masa del resorte",
 		"classicZoom": "Animación clásica",
-		"cursorDebugMovedToDev": "El ajuste del resorte del cursor está en Ajustes > Desarrollo.",
 		"webcamShape": "Forma",
 		"webcamCircle": "Círculo",
-		"webcamSquircle": "Cuadrado redondeado",
+		"webcamRectangle": "Rectángulo",
+		"webcamSquircle": "Cuadrado",
 		"webcamPosition": "Posición",
 		"webcamCustomPosition": "Posición personalizada",
 		"webcamHorizontal": "Horizontal",
 		"webcamVertical": "Vertical",
 		"webcamMargin": "Margen",
 		"webcamVideo": "Vídeo de cámara web",
+		"webcamSource": "Origen de la cámara",
+		"changeWebcamSource": "Cambiar origen",
 		"addWebcamVideo": "Añadir un vídeo de cámara web",
 		"webcamVideoHint": "Usa la grabación de tu cámara o añade un vídeo para mostrarlo junto a la pantalla.",
 		"webcamDragHint": "También puedes arrastrar la cámara web en la vista previa.",
@@ -206,7 +206,10 @@
 			"bottom-left": "Abajo a la izquierda",
 			"bottom-center": "Abajo en el centro",
 			"bottom-right": "Abajo a la derecha"
-		}
+		},
+		"webcamPreviewFrame": "Marco",
+		"webcamFrameStandard": "Estándar",
+		"webcamFrameSoftBlur": "Desenfoque suave"
 	},
 	"sections": {
 		"scene": "Escena",
@@ -222,6 +225,8 @@
 		"title": "Herramientas de edición"
 	},
 	"captions": {
+		"firstDownload": "El primer uso descarga {{size}} MB de archivos de voz y luego genera los subtítulos.",
+		"localProcessing": "Los subtítulos se generan en este dispositivo. Tu grabación no se sube.",
 		"selectOnTimeline": "Selecciona un subtítulo en la línea de tiempo para editarlo.",
 		"enabled": "Mostrar",
 		"timelineQuickAdd": "Pasar el cursor para añadir en la línea de tiempo",
@@ -379,7 +384,15 @@
 		"experimentalDescription": "Has activado las actualizaciones experimentales, así que puedes probar la actualización más reciente de Recordly antes de que esté disponible para todos.",
 		"title": "Actualizaciones",
 		"experimental": "Actualizaciones experimentales",
-		"saveFailed": "No se pudo cambiar el canal de actualización."
+		"saveFailed": "No se pudo cambiar el canal de actualización.",
+		"changeVersion": "Cambiar versión",
+		"versionInstallHint": "Descarga una versión y abre el instalador para cambiar de versión.",
+		"loadingVersions": "Cargando versiones…",
+		"version": "Versión",
+		"prereleaseVersion": "Versión preliminar",
+		"noVersions": "No hay versiones compatibles disponibles para esta instalación.",
+		"versionFailed": "No se pudo cargar o descargar esta versión. Inténtalo de nuevo.",
+		"downloadInstaller": "Descargar instalador"
 	},
 	"categories": {
 		"general": "General",
@@ -484,7 +497,8 @@
 		"menuBarDescription": "Los controles de grabación siguen disponibles en la barra de menús y en pantalla.",
 		"trayDescription": "Los controles de grabación siguen disponibles en la bandeja del sistema y en pantalla.",
 		"hideDockDependency": "Activa «Mostrar Recordly en el Dock» para usar esta opción.",
-		"hideTaskbarDependency": "Activa «Mostrar Recordly en la barra de tareas» para usar esta opción."
+		"hideTaskbarDependency": "Activa «Mostrar Recordly en la barra de tareas» para usar esta opción.",
+		"behavior": "Comportamiento de la app"
 	},
 	"appPreferences": {
 		"folderUnavailable": "La ubicación de la carpeta no está disponible.",
@@ -555,7 +569,10 @@
 		"openSystemSettings": "Abrir Ajustes del Sistema",
 		"opening": "Abriendo…",
 		"restrictedDescription": "Es posible que el administrador del dispositivo deba conceder este permiso.",
-		"reviewSetup": "Revisar la configuración de permisos"
+		"reviewSetup": "Revisar la configuración de permisos",
+		"allowMicrophone": "Permitir micrófono",
+		"allowCamera": "Permitir cámara",
+		"requestFailed": "No se pudo solicitar acceso. Inténtalo de nuevo o habilita el acceso en Ajustes del Sistema."
 	},
 	"cloudUsage": {
 		"label": "Uso de la nube",

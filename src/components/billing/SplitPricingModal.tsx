@@ -1,7 +1,11 @@
 import { Button, Label, Modal, Radio, RadioGroup } from "@heroui/react";
 import { Check } from "@phosphor-icons/react";
 import { ErrorReportButton } from "@/components/feedback/ErrorReportButton";
-import { OnboardingHeader, OnboardingLayout } from "@/components/auth/OnboardingLayout";
+import {
+	OnboardingHeader,
+	OnboardingHeroTitle,
+	OnboardingLayout,
+} from "@/components/auth/OnboardingLayout";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import type { CloudBillingPrice } from "@/types/cloudBilling";
 import { useBilling } from "./BillingProvider";
@@ -109,7 +113,7 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 	const pending = Boolean(busy) || (Boolean(user) && pricingLoading);
 	const benefits = [
 		t("featureLicense", "Full commercial license"),
-		t("featureLinkSharing", "Share any video with a link"),
+		t("featureLinkSharing", "Share any video with a 24/7 link"),
 		t("featureStorage", "Unlimited cloud storage and bandwidth"),
 		t("featurePlayback", "Play cloud videos in FHD 1080p"),
 		t("featureCaptionExport", "Export caption SRT and VTT files"),
@@ -136,12 +140,12 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 										<OnboardingHeader
 											centered
 											title={
-												<span className="recordly-signin-hero">
-													{t(
+												<OnboardingHeroTitle
+													text={t(
 														"upgradeHeading",
 														"Unlock Recordly's full power",
-													)}
-												</span>
+													).replace("Recordly", "{{brand}}")}
+												/>
 											}
 											description={t(
 												"intro",
@@ -168,20 +172,6 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 														<span>{benefit}</span>
 													</li>
 												))}
-												<li>
-													<span
-														className="split-upgrade-heart"
-														aria-hidden="true"
-													>
-														❤️
-													</span>
-													<span>
-														{t(
-															"featureSupport",
-															"Support solo development",
-														)}
-													</span>
-												</li>
 											</ul>
 										</section>
 										<div className="split-upgrade-purchase">
@@ -280,18 +270,6 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 													}
 												>
 													{t("returnToCheckout", "Return to checkout")}
-												</Button>
-											)}
-											{!plus && checkoutReady && portalAvailable && (
-												<Button
-													variant="ghost"
-													isDisabled={Boolean(busy) || loading}
-													onPress={() => void startBilling("portal")}
-												>
-													{t(
-														"previousSubscription",
-														"Manage previous subscription",
-													)}
 												</Button>
 											)}
 										</div>

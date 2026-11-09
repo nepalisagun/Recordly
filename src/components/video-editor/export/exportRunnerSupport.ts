@@ -17,6 +17,7 @@ import type { useExportSession } from "./useExportSession";
 import type { useExportSettings } from "./useExportSettings";
 
 export type ExportRunnerInput = {
+	exportIdentity?: import("../dashboard/libraryExportHistory").LibraryExportIdentity;
 	projectName: string;
 	videoPath: string | null;
 	videoPlaybackRef: RefObject<VideoPlaybackRef | null>;
@@ -49,6 +50,20 @@ export function showExportErrorToast(message: string) {
 		description: summary === message ? summary : message,
 		duration: Infinity,
 	});
+}
+
+export function showCaptionSidecarWarning(result: {
+	success: boolean;
+	captionSidecarFailed?: boolean;
+}) {
+	if (!result.success || !result.captionSidecarFailed) return;
+	toast.warning(
+		translate(
+			"notifications.captionFilesSaveFailed",
+			"Video saved, but some caption files could not be saved.",
+		),
+		{ duration: Infinity },
+	);
 }
 
 export function useExportSuccessToast() {
