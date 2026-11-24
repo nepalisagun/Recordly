@@ -1,6 +1,7 @@
 import type { Span } from "dnd-timeline";
 import type { ForwardedRef, RefObject } from "react";
 import { useCallback, useImperativeHandle } from "react";
+import { type ClipTrimEdge, planClipTrimToPlayhead } from "../../clipTrim";
 import type {
 	AnnotationRegion,
 	AudioRegion,
@@ -33,13 +34,18 @@ interface UseTimelineEditorRuntimeParams {
 	onZoomAdded: (span: Span) => void;
 	onZoomSuggested?: (span: Span, focus: ZoomFocus) => void;
 	onZoomSpanChange: (id: string, span: Span) => void;
-	onZoomDelete: (id: string) => void;
+	onZoomDelete: (target: string | readonly string[]) => void;
+	onDuplicateSelectedRegion?: () => void;
+	onCopySelectedRegion?: () => boolean;
+	onPasteCopiedRegion?: () => boolean;
+	onClearZooms?: () => void;
 	selectedZoomId: string | null;
 	onSelectZoom: (id: string | null) => void;
 	trimRegions: TrimRegion[];
 	onTrimSpanChange?: (id: string, span: Span) => void;
 	clipRegions: ClipRegion[];
 	onClipSplit?: (splitMs: number) => void;
+	onSeek?: (time: number) => void;
 	onClipSpanChange?: (id: string, span: ClipSequenceSpan) => void;
 	onClipDelete?: (id: string) => void;
 	selectedClipId?: string | null;
@@ -72,6 +78,8 @@ interface UseTimelineEditorRuntimeParams {
 	isMac: boolean;
 	keyShortcuts: TimelineShortcutBindings;
 	isTimelineFocusedRef: RefObject<boolean | null>;
+	zoomTimelineIn: () => void;
+	zoomTimelineOut: () => void;
 }
 
 export function useTimelineEditorRuntime({
@@ -86,12 +94,17 @@ export function useTimelineEditorRuntime({
 	onZoomSuggested,
 	onZoomSpanChange,
 	onZoomDelete,
+	onDuplicateSelectedRegion,
+	onCopySelectedRegion,
+	onPasteCopiedRegion,
+	onClearZooms,
 	selectedZoomId,
 	onSelectZoom,
 	trimRegions,
 	onTrimSpanChange,
 	clipRegions,
 	onClipSplit,
+	onSeek,
 	onClipSpanChange,
 	onClipDelete,
 	selectedClipId,
@@ -119,6 +132,8 @@ export function useTimelineEditorRuntime({
 	isMac,
 	keyShortcuts,
 	isTimelineFocusedRef,
+	zoomTimelineIn,
+	zoomTimelineOut,
 }: UseTimelineEditorRuntimeParams) {
 	const {
 		keyframes,
@@ -126,12 +141,16 @@ export function useTimelineEditorRuntime({
 		setSelectedKeyframeId,
 		selectAllBlocksActive,
 		setSelectAllBlocksActive,
+		selectedZoomIds,
+		setSelectedZoomIds,
+		selectZoomIds,
 		hasAnyZoomBlocks,
 		activateSelectAllZooms,
 		addKeyframe,
 		deleteSelectedKeyframe,
 		handleKeyframeMove,
 		deleteSelectedZoom,
+		clearAllZooms,
 		deleteSelectedClip,
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
@@ -156,6 +175,7 @@ export function useTimelineEditorRuntime({
 		selectedAudioId,
 		selectedCaptionId,
 		onZoomDelete,
+		onClearZooms,
 		onClipDelete,
 		onAnnotationDelete,
 		onAudioDelete,
@@ -203,6 +223,13 @@ export function useTimelineEditorRuntime({
 		onCaptionSpanChange,
 	});
 
+	const addZoomAndClearGroup = useCallback(
+		(span: Span) => {
+			onZoomAdded(span);
+			setSelectedZoomIds((ids) => (ids.length ? [] : ids));
+		},
+		[onZoomAdded, setSelectedZoomIds],
+	);
 	const {
 		defaultRegionDurationMs,
 		canPlaceZoomAtMs,
@@ -213,7 +240,7 @@ export function useTimelineEditorRuntime({
 		timeline: { videoDuration, totalMs, currentTimeMs },
 		regions: { zoom: zoomRegions, clip: clipRegions },
 		cursorTelemetry,
-		onZoomAdded,
+		onZoomAdded: addZoomAndClearGroup,
 		onZoomSuggested,
 	});
 
@@ -230,6 +257,25 @@ export function useTimelineEditorRuntime({
 		}
 		onClipSplit(currentTimeMs);
 	}, [videoDuration, totalMs, currentTimeMs, onClipSplit]);
+
+	const trimClipToPlayhead = useCallback(
+		(edge: ClipTrimEdge) => {
+			if (!onClipSpanChange || totalMs === 0) return;
+			const plan = planClipTrimToPlayhead(
+				clipRegions,
+				currentTimeMs,
+				edge,
+				safeMinDurationMs,
+			);
+			if (!plan) return;
+			onClipSpanChange(plan.clip.id, plan.span);
+			// The footage after a start trim moves back to where the clip began.
+			if (edge === "start") onSeek?.(plan.clip.startMs / 1000);
+		},
+		[clipRegions, currentTimeMs, onClipSpanChange, onSeek, safeMinDurationMs, totalMs],
+	);
+	const handleTrimStart = useCallback(() => trimClipToPlayhead("start"), [trimClipToPlayhead]);
+	const handleTrimEnd = useCallback(() => trimClipToPlayhead("end"), [trimClipToPlayhead]);
 
 	const { handleAddAudio } = useTimelineAudioActions({
 		timeline: { videoDuration, totalMs, currentTimeMs },
@@ -274,16 +320,24 @@ export function useTimelineEditorRuntime({
 		selectedAudioId,
 		selectedCaptionId,
 		selectAllBlocksActive,
+		selectedZoomIds,
+		clearSelectedBlocks,
 		addKeyframe,
 		handleAddZoom,
 		handleSplitClip,
+		handleTrimStart,
+		handleTrimEnd,
 		handleAddAnnotation: () => handleAddAnnotation(),
 		deleteSelectedKeyframe,
 		deleteSelectedZoom,
+		clearAllZooms,
 		deleteSelectedClip,
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
 		deleteSelectedCaption,
+		onDuplicateSelectedRegion,
+		onCopySelectedRegion,
+		onPasteCopiedRegion,
 		cycleAnnotationsAtCurrentTime,
 	});
 
@@ -292,18 +346,28 @@ export function useTimelineEditorRuntime({
 		() => ({
 			addZoom: handleAddZoom,
 			suggestZooms: handleSuggestZooms,
+			clearAllZooms,
 			splitClip: handleSplitClip,
+			trimStart: handleTrimStart,
+			trimEnd: handleTrimEnd,
 			addAnnotation: handleAddAnnotation,
 			addAudio: handleAddAudio,
+			zoomTimelineIn,
+			zoomTimelineOut,
 			keyframes,
 		}),
 		[
+			clearAllZooms,
 			handleAddAnnotation,
 			handleAddAudio,
 			handleAddZoom,
 			handleSuggestZooms,
 			handleSplitClip,
+			handleTrimEnd,
+			handleTrimStart,
 			keyframes,
+			zoomTimelineIn,
+			zoomTimelineOut,
 		],
 	);
 
@@ -313,6 +377,10 @@ export function useTimelineEditorRuntime({
 		setSelectedKeyframeId,
 		selectAllBlocksActive,
 		setSelectAllBlocksActive,
+		selectedZoomIds,
+		setSelectedZoomIds,
+		selectZoomIds,
+		deleteSelectedZoom,
 		handleKeyframeMove,
 		clearSelectedBlocks,
 		handleSelectZoom,

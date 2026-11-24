@@ -1,12 +1,12 @@
-import { useI18n as useUiLocale } from "@/contexts/I18nContext";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useI18n } from "@/contexts/I18nContext";
+import { useI18n, useI18n as useUiLocale } from "@/contexts/I18nContext";
 import { CropControl } from "../CropControl";
 import { fitCropRatio } from "../cropGeometry";
 import type { CropRegion } from "../types";
+import { CropPixelFields } from "./CropPixelFields";
 
 type Props = {
 	videoElement: HTMLVideoElement | null;
@@ -26,6 +26,7 @@ export function InlineCropEditor({
 	useUiLocale();
 	const { t } = useI18n();
 	const root = useRef<HTMLDivElement>(null);
+	const [showPixels, setShowPixels] = useState(false);
 	const [ratioOpen, setRatioOpen] = useState(false);
 	const [ratio, setRatio] = useState<number | null>(null);
 	const [ratioLabel, setRatioLabel] = useState("");
@@ -84,6 +85,14 @@ export function InlineCropEditor({
 					)}
 				</span>
 				<div className="flex items-center gap-1">
+					<Button
+						size="sm"
+						variant={showPixels ? "secondary" : "ghost"}
+						aria-pressed={showPixels}
+						onClick={() => setShowPixels((visible) => !visible)}
+					>
+						{t("settings.crop.pixelFields", "Pixels")}
+					</Button>
 					<Button size="sm" variant="ghost" onClick={() => setRatioOpen(true)}>
 						{t("settings.crop.aspectRatio", "Aspect ratio")}
 						{ratio ? ` · ${ratioLabel}` : ""}
@@ -117,6 +126,14 @@ export function InlineCropEditor({
 					lockedRatio={ratio}
 				/>
 			</div>
+			{showPixels && (
+				<CropPixelFields
+					videoElement={videoElement}
+					crop={cropRegion}
+					lockedRatio={ratio}
+					onCropChange={onCropChange}
+				/>
+			)}
 			<Dialog open={ratioOpen} onOpenChange={setRatioOpen}>
 				<DialogContent className="max-w-sm">
 					<DialogTitle>{t("settings.crop.aspectRatio", "Aspect ratio")}</DialogTitle>

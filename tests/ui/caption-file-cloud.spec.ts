@@ -7,7 +7,7 @@ async function openCaptionExport(page: Page, mode: "free" | "pro", signedIn = tr
 		page,
 		({ mode }) => {
 			localStorage.setItem(
-				"recordly.editor.preferences",
+				"recordly.editor.preferences.v2",
 				JSON.stringify({ includeCaptionSidecar: true }),
 			);
 			document.addEventListener("DOMContentLoaded", () => {
@@ -69,11 +69,8 @@ for (const signedIn of [true, false]) {
 		const toggle = await openCaptionExport(page, "free", signedIn);
 		await expect(toggle).not.toBeChecked();
 		await toggle.press("Space");
-		const pricing = page.getByRole("dialog", { name: "Recordly Cloud", exact: true });
+		const pricing = page.getByRole("dialog", { name: "Recordly Plus", exact: true });
 		await expect(pricing).toBeVisible();
-		await expect(
-			pricing.getByRole("list", { name: "Your Cloud benefits", exact: true }),
-		).toContainText("SRT and VTT caption-file exports");
 		await pricing.getByRole("button", { name: "Close", exact: true }).click();
 		await expect(toggle).not.toBeChecked();
 		await page.getByRole("button", { name: "Export Video", exact: true }).click();

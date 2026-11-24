@@ -1,20 +1,21 @@
-import { drawSquircleOnCanvas, SQUIRCLE_RADIUS_SCALE } from "@/lib/geometry/squircle";
 import { getCaptionFontFamily } from "@/components/video-editor/captionFonts";
+import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
 	drawCaptionBoxBorder,
 	getCaptionBackground,
 	getCaptionPreset,
 } from "@/components/video-editor/captionPresets";
-import { drawCaptionLine } from "./captionText";
-import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
 	CAPTION_LINE_HEIGHT,
+	getCaptionBoxCenter,
 	getCaptionPadding,
 	getCaptionScaledFontSize,
 	getCaptionScaledRadius,
 	getCaptionTextMaxWidth,
 } from "@/components/video-editor/captionStyle";
 import { type AutoCaptionSettings, type CaptionCue } from "@/components/video-editor/types";
+import { drawSquircleOnCanvas, SQUIRCLE_RADIUS_SCALE } from "@/lib/geometry/squircle";
+import { drawCaptionLine } from "./captionText";
 
 /** Draw the active caption using the same typography and timing as preview. */
 export function renderCaptions(
@@ -52,8 +53,6 @@ export function renderCaptions(
 	const paddingY = padding.y;
 	const textBlockHeight = activeCaptionLayout.visibleLines.length * lineHeight;
 	const boxHeight = textBlockHeight + paddingY * 2;
-	const centerX = width / 2;
-	const centerY = height - (height * settings.bottomOffset) / 100 - boxHeight / 2;
 	const maxMeasuredWidth = activeCaptionLayout.visibleLines.reduce(
 		(largest, line) => Math.max(largest, line.width),
 		0,
@@ -62,6 +61,14 @@ export function renderCaptions(
 		width * (settings.maxWidth / 100) + paddingX * 2,
 		maxMeasuredWidth + paddingX * 2,
 	);
+	const { centerX, centerY } = getCaptionBoxCenter({
+		width,
+		height,
+		boxWidth,
+		boxHeight,
+		horizontalPosition: settings.horizontalPosition,
+		bottomOffset: settings.bottomOffset,
+	});
 
 	ctx.translate(centerX, centerY + activeCaptionLayout.translateY);
 	ctx.scale(activeCaptionLayout.scale, activeCaptionLayout.scale);

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type {} from "./preview-performance";
 import { installDesktopBridge } from "./bridge";
+import type {} from "./preview-performance";
 
 type FrameProbe = { frames: number; hidden: unknown[]; blank: unknown[]; retained: boolean };
 declare global {
@@ -22,9 +22,7 @@ test("resizing a paused zoom keeps the recording visible", async ({ page }) => {
 	await page.evaluate(() => window.performancePreview.api!.seekTimeline(2));
 	await expect
 		.poll(() =>
-			page.evaluate(
-				() => window.performancePreview.api!.videoContainer!.parent!.parent!.scale.x,
-			),
+			page.evaluate(() => window.performancePreview.api!.videoContainer!.parent!.parent!.scale.x),
 		)
 		.toBeGreaterThan(1);
 
@@ -35,15 +33,7 @@ test("resizing a paused zoom keeps the recording visible", async ({ page }) => {
 			const gl = canvas.getContext("webgl2")!;
 			const pixel = new Uint8Array(4);
 			app.render();
-			gl.readPixels(
-				canvas.width / 2,
-				canvas.height / 2,
-				1,
-				1,
-				gl.RGBA,
-				gl.UNSIGNED_BYTE,
-				pixel,
-			);
+			gl.readPixels(canvas.width / 2, canvas.height / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
 			return pixel[3];
 		});
 	expect(await pixelAlpha()).toBe(255);

@@ -1,4 +1,3 @@
-import { translate } from "@/i18n/runtime";
 import {
 	type Dispatch,
 	type RefObject,
@@ -8,14 +7,20 @@ import {
 	useLayoutEffect,
 	useRef,
 } from "react";
-import type { useProjectSaveActions } from "./useProjectSaveActions";
 import { toast } from "@/components/ui/toast";
+import { translate } from "@/i18n/runtime";
+import {
+	beginAppOperation,
+	recordAppDiagnostic,
+	setDiagnosticView,
+} from "@/lib/feedback/diagnostics";
 import { fromFileUrl, resolveVideoUrl } from "../projectPersistence";
 import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useProjectState } from "../state/useProjectState";
 import { DEFAULT_WEBCAM_TIME_OFFSET_MS } from "../types";
-import { errorSourceName, isMissingProjectRecording, projectLoadError } from "./projectLoadError";
 import type { VideoPlaybackRef } from "../VideoPlayback";
+import { errorSourceName, isMissingProjectRecording, projectLoadError } from "./projectLoadError";
+import type { useProjectSaveActions } from "./useProjectSaveActions";
 
 type Set<T> = Dispatch<SetStateAction<T>>;
 
@@ -34,7 +39,7 @@ type UseProjectOpenActionsInput = {
 	) => Promise<boolean>;
 	openUnsavedChangesDialog: (actionLabel: string) => Promise<"save" | "discard" | "cancel">;
 	saveProject: ReturnType<typeof useProjectSaveActions>["saveProject"];
-	refreshProjectLibrary: () => Promise<void>;
+	refreshProjectLibrary: (parentOperationId?: string) => Promise<void>;
 	resetSourceScopedEditorState: () => void;
 	applySessionPresentation: (session: null) => void;
 	handleSaveProject: () => Promise<unknown>;
@@ -192,19 +197,24 @@ export function useProjectOpenActions({
 	const handleOpenProjectFromLibrary = useCallback(
 		async (projectPath: string) => {
 			if (opening.current) return;
+			const operation = beginAppOperation("project.open");
 			opening.current = true;
 			try {
 				if (!(await confirmReplaceSourceWithUnsavedChanges("open another project"))) return;
+				operation.step("read-project");
 				const result = await window.electronAPI.openProjectFileAtPath(projectPath);
 				if (result.canceled) return;
 				if (!result.success) {
+					operation.finish("failed");
 					reportOpenError(
 						result.error || result.message || "Failed to load project",
 						projectPath,
 					);
 					return;
 				}
+				operation.step("apply-project");
 				if (!(await applyLoadedProject(result.project, result.path ?? null))) {
+					operation.finish("failed");
 					reportOpenError("Invalid project file format", projectPath);
 					return;
 				}
@@ -218,10 +228,13 @@ export function useProjectOpenActions({
 						),
 					);
 				await refreshProjectLibrary();
+				operation.finish("succeeded");
 				return true;
 			} catch (error) {
+				operation.finish("failed");
 				reportOpenError(error, projectPath);
 			} finally {
+				operation.finish("cancelled");
 				opening.current = false;
 			}
 		},
@@ -239,12 +252,15 @@ export function useProjectOpenActions({
 
 	const handleImportMediaOrProject = useCallback(async () => {
 		if (opening.current) return;
+		const operation = beginAppOperation("project.import");
 		opening.current = true;
 		try {
 			if (!(await confirmReplaceSourceWithUnsavedChanges("import a file"))) return;
+			operation.step("pick-file");
 			const result = await window.electronAPI.openVideoFilePicker({ includeProjects: true });
 			if (result.canceled) return;
 			if (!result.success) {
+				operation.finish("failed");
 				reportOpenError(
 					result.error || result.message || "Failed to import file",
 					result.path,
@@ -252,7 +268,9 @@ export function useProjectOpenActions({
 				return;
 			}
 			if (result.kind === "project" || result.project) {
+				operation.step("apply-project");
 				if (!(await applyLoadedProject(result.project, result.path ?? null))) {
+					operation.finish("failed");
 					reportOpenError("Invalid project file format");
 					return;
 				}
@@ -276,13 +294,16 @@ export function useProjectOpenActions({
 								)
 							: translate("notifications.projectLoaded", "Project loaded"),
 					);
+				operation.finish("succeeded");
 				return;
 			}
 			if (!result.path) {
+				operation.finish("failed");
 				toast.error(translate("notifications.noMediaSelected", "No media file selected"));
 				return;
 			}
 
+			operation.step("apply-media");
 			const sourcePath = fromFileUrl(result.path);
 			const setPathResult = await window.electronAPI.setCurrentVideoPath(sourcePath, {
 				preserveProjectPath: false,
@@ -316,9 +337,12 @@ export function useProjectOpenActions({
 			project.setProjectBrowserOpen(false);
 			await refreshProjectLibrary();
 			toast.success(translate("notifications.mediaImported", "Media imported"));
+			operation.finish("succeeded");
 		} catch (error) {
+			operation.finish("failed");
 			reportOpenError(error);
 		} finally {
+			operation.finish("cancelled");
 			opening.current = false;
 		}
 	}, [
@@ -341,19 +365,33 @@ export function useProjectOpenActions({
 			project.setProjectBrowserOpen(false);
 			return;
 		}
-		videoPlaybackRef.current?.pause();
-		setIsPlaying(false);
-		project.setProjectLibraryLoading(true);
-		project.setProjectBrowserOpen(true);
+		setDiagnosticView("home");
+		recordAppDiagnostic("Home open requested");
+		const operation = beginAppOperation("home.open");
 		try {
-			if (project.videoPath && !project.error) {
-				await saveProject(false, {
-					remountPreviewAfterSave: false,
-					refreshLibraryAfterSave: false,
-				});
+			operation.step("pause-preview");
+			videoPlaybackRef.current?.pause();
+			setIsPlaying(false);
+			project.setProjectLibraryLoading(true);
+			project.setProjectBrowserOpen(true);
+			try {
+				if (project.videoPath && !project.error) {
+					operation.step("autosave-editor");
+					const saved = await saveProject(false, {
+						parentOperationId: operation.id,
+						remountPreviewAfterSave: false,
+						refreshLibraryAfterSave: false,
+					});
+					if (!saved) operation.step("autosave-unsuccessful");
+				}
+			} finally {
+				operation.step("refresh-library");
+				await refreshProjectLibrary(operation.id);
 			}
-		} finally {
-			await refreshProjectLibrary();
+			operation.finish("succeeded");
+		} catch (error) {
+			operation.finish("failed");
+			throw error;
 		}
 	}, [
 		project.projectBrowserOpen,
@@ -366,6 +404,29 @@ export function useProjectOpenActions({
 		project.videoPath,
 		project.error,
 	]);
+
+	const handleOpenRecordingHud = useCallback(async () => {
+		if (opening.current) return;
+		opening.current = true;
+		try {
+			videoPlaybackRef.current?.pause();
+			setIsPlaying(false);
+			if (project.videoPath && !project.error) {
+				const saved = await saveProject(false, {
+					remountPreviewAfterSave: false,
+					refreshLibraryAfterSave: false,
+				});
+				if (!saved) return;
+			}
+			await window.electronAPI.showRecordingHud();
+		} catch {
+			toast.error(
+				translate("notifications.startRecordingFailed", "Failed to start recording"),
+			);
+		} finally {
+			opening.current = false;
+		}
+	}, [videoPlaybackRef, setIsPlaying, project.videoPath, project.error, saveProject]);
 
 	useEffect(() => {
 		const openRequestedDashboard = () => {
@@ -438,6 +499,7 @@ export function useProjectOpenActions({
 		handleOpenProjectFromLibrary,
 		handleImportMediaOrProject,
 		handleOpenProjectBrowser,
+		handleOpenRecordingHud,
 		handleDeleteProjects,
 	};
 }

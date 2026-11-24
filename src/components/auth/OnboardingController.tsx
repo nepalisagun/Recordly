@@ -1,6 +1,10 @@
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadAppSetting, saveAppSetting } from "@/lib/appSettings";
+import {
+	hasSkippedOnboardingSignIn,
+	saveSkippedOnboardingSignIn,
+} from "@/lib/auth/onboardingSignIn";
 import { hasRequiredRecordingPermissions } from "@/lib/recordingPermissions";
 import { RecordingPermissionsDialog } from "./RecordingPermissionsDialog";
 import { RecordlySignInDialog } from "./RecordlySignInDialog";
@@ -14,14 +18,24 @@ export function OnboardingController({
 	user,
 	configured,
 	callbackError,
+	authenticationVersion,
 	standalone = false,
+	authCallbackPending = false,
+	initialPermissions = false,
+	finishStartup,
+	onUnlockSavedSignIn,
 }: {
 	requestNonce: number;
 	ready: boolean;
 	user: User | null;
 	configured: boolean;
 	callbackError?: string;
+	authenticationVersion?: number;
 	standalone?: boolean;
+	authCallbackPending?: boolean;
+	initialPermissions?: boolean;
+	finishStartup?: () => Promise<boolean>;
+	onUnlockSavedSignIn?: () => void;
 }) {
 	// The development tour is optional. Native permission requests and explicit
 	// real-flow tests use preview=0; neither mode changes the restored account.
@@ -32,12 +46,14 @@ export function OnboardingController({
 	);
 	const [open, setOpen] = useState(standalone);
 	const [inlineFallback, setInlineFallback] = useState(false);
-	const [returningSignIn, setReturningSignIn] = useState(false);
+	const [signInSkipped, setSignInSkipped] = useState(hasSkippedOnboardingSignIn);
+	const canContinue = Boolean(user || signInSkipped);
 	const [startWithPermissions, setStartWithPermissions] = useState(
 		() =>
-			standalone &&
-			!preview &&
-			loadAppSetting<boolean>("recordly.onboarding.permissionsRequested") === true,
+			initialPermissions ||
+			(standalone &&
+				!preview &&
+				loadAppSetting<boolean>("recordly.onboarding.permissionsRequested") === true),
 	);
 	const checked = useRef(false);
 	const handledRequest = useRef(0);
@@ -46,7 +62,6 @@ export function OnboardingController({
 		(windowPreview = preview) => {
 			checked.current = true;
 			setPreview(windowPreview);
-			setReturningSignIn(false);
 			if (standalone) setOpen(true);
 			else
 				void window.electronAPI
@@ -82,6 +97,7 @@ export function OnboardingController({
 	useEffect(() => {
 		if (!ready) return;
 		if (checked.current && (preview || standalone)) return;
+		const hasAccountAccess = canContinue || hasSkippedOnboardingSignIn();
 		if (!standalone) {
 			// A preview dismissal survives renderer/window recreation without marking
 			// production onboarding complete or replaying a stale permission request.
@@ -89,7 +105,7 @@ export function OnboardingController({
 			const permissionsRequested =
 				!preview && loadAppSetting<boolean>("recordly.onboarding.permissionsRequested");
 			const seen = loadAppSetting<boolean>(SEEN_KEY);
-			if (user && seen && permissionsRequested && !checked.current) {
+			if (hasAccountAccess && seen && permissionsRequested && !checked.current) {
 				let cancelled = false;
 				void hasRequiredRecordingPermissions()
 					.catch(() => false)
@@ -107,12 +123,11 @@ export function OnboardingController({
 				};
 			}
 			if (permissionsRequested) setStartWithPermissions(true);
-			if (!preview && !user && seen && !permissionsRequested) {
-				setReturningSignIn(true);
-				setOpen(true);
-			} else if (!checked.current && (permissionsRequested || !seen)) {
+			if (
+				!checked.current &&
+				(permissionsRequested || !seen || (!preview && !hasAccountAccess))
+			) {
 				// Session updates must not duplicate an in-flight native window request.
-				setReturningSignIn(false);
 				openWindow();
 			}
 			return;
@@ -122,28 +137,32 @@ export function OnboardingController({
 			setOpen(true);
 			return;
 		}
-		if (preview || !user) {
+		if (preview || !hasAccountAccess) {
 			setOpen(true);
 			return;
 		}
 		if (checked.current) return;
 		checked.current = true;
 		if (!loadAppSetting<boolean>(SEEN_KEY)) setOpen(true);
-	}, [ready, user, standalone, openWindow, preview]);
+	}, [ready, canContinue, standalone, openWindow, preview]);
 
-	useEffect(
-		() =>
-			window.electronAPI.onRecordingPermissionsRequested?.(() => {
-				saveAppSetting("recordly.onboarding.permissionsRequested", true);
-				setStartWithPermissions(true);
-				openWindow(false);
-			}),
-		[openWindow],
-	);
-
-	const finishPermissions = () => {
-		if ((!preview && !user) || finishingPermissions.current) return;
+	const finishPermissions = (markSeen = false) => {
+		if (finishingPermissions.current) return;
+		if (!preview) {
+			if (authCallbackPending || (!canContinue && !hasSkippedOnboardingSignIn())) return;
+			if (markSeen) saveAppSetting(SEEN_KEY, true);
+		}
 		finishingPermissions.current = true;
+		if (finishStartup) {
+			void finishStartup()
+				.then((finished) => {
+					if (finished) close();
+				})
+				.finally(() => {
+					finishingPermissions.current = false;
+				});
+			return;
+		}
 		let restorePermissionsRequest = false;
 		let previousPreviewDismissal: boolean | null = null;
 		let markedPreviewDismissed = false;
@@ -176,19 +195,14 @@ export function OnboardingController({
 				finishingPermissions.current = false;
 			});
 	};
-	const finish = () => {
-		if (!preview && !user) return;
-		if (!preview) saveAppSetting(SEEN_KEY, true);
-		finishPermissions();
-	};
-
 	// Wait for session restoration before choosing a page on a permission restart.
 	if (standalone && startWithPermissions && !preview && !ready) return null;
 
 	if (
 		startWithPermissions &&
+		!finishStartup &&
 		!preview &&
-		user &&
+		canContinue &&
 		loadAppSetting<boolean>(SEEN_KEY) === true &&
 		(standalone || inlineFallback)
 	)
@@ -196,7 +210,8 @@ export function OnboardingController({
 			<RecordingPermissionsDialog
 				open={open}
 				standalone={standalone}
-				onFinish={finishPermissions}
+				finishDisabled={authCallbackPending}
+				onFinish={() => finishPermissions()}
 				onClose={() => {
 					close();
 					if (standalone) void window.electronAPI.closeOnboardingWindow();
@@ -204,27 +219,19 @@ export function OnboardingController({
 			/>
 		);
 
-	if (returningSignIn)
-		return (
-			<RecordlySignInDialog
-				open={open}
-				onOpenChange={setOpen}
-				user={user}
-				configured={configured}
-				callbackError={callbackError}
-				requireSignIn
-				onAuthenticated={() => {
-					setReturningSignIn(false);
-					setOpen(false);
-				}}
-			/>
-		);
-
 	return standalone || inlineFallback ? (
 		<RecordlySignInDialog
 			onboarding
+			finishDisabled={!preview && (!ready || authCallbackPending)}
 			preview={preview}
 			startWithPermissions={startWithPermissions}
+			signInSkipped={!preview && signInSkipped}
+			onContinueAsGuest={() => {
+				if (preview || signInSkipped) return true;
+				if (!saveSkippedOnboardingSignIn()) return false;
+				setSignInSkipped(true);
+				return true;
+			}}
 			variant="wide"
 			open={open}
 			onOpenChange={(value) => {
@@ -236,7 +243,9 @@ export function OnboardingController({
 			user={user}
 			configured={configured}
 			callbackError={callbackError}
-			onAuthenticated={finish}
+			onUnlockSavedSignIn={onUnlockSavedSignIn}
+			authenticationVersion={authenticationVersion}
+			onAuthenticated={() => finishPermissions(true)}
 			onWindowClose={
 				standalone
 					? () => {

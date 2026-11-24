@@ -1,9 +1,9 @@
+import { Button, Description, Form, TextArea, TextField } from "@heroui/react";
+import { Paperclip } from "@phosphor-icons/react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useRecordlyAuth } from "@/components/auth/useRecordlyAuth";
 import { ErrorReportButton } from "@/components/feedback/ErrorReportButton";
 import { FeedbackLinks } from "@/components/feedback/FeedbackLinks";
-import { Button, Description, Form, TextArea, TextField } from "@heroui/react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useI18n } from "@/contexts/I18nContext";
-import { useRecordlyAuth } from "@/components/auth/useRecordlyAuth";
 import {
 	Dialog,
 	DialogContent,
@@ -11,12 +11,13 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-import { Paperclip } from "@phosphor-icons/react";
 import { ChatWarning, X } from "@/components/ui/icons";
-import { collectFeedbackDiagnostics } from "@/lib/feedback/diagnostics";
+import { useI18n } from "@/contexts/I18nContext";
+import { beginAppOperation, collectFeedbackDiagnostics } from "@/lib/feedback/diagnostics";
 import {
-	getFeedbackDraft,
+	DEFAULT_FEEDBACK_SENTIMENT,
 	type FeedbackSentiment,
+	getFeedbackDraft,
 	subscribeFeedbackDraft,
 	updateFeedbackDraft,
 } from "@/lib/feedback/draft";
@@ -72,6 +73,7 @@ export function FeedbackDialog({
 	};
 	const [error, setError] = useState("");
 	const [sending, setSending] = useState(false);
+	const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 	const [sent, setSent] = useState(false);
 	const sendingRef = useRef(false);
 	const picker = useRef<HTMLInputElement>(null);
@@ -179,26 +181,34 @@ export function FeedbackDialog({
 							sendingRef.current = true;
 							setSending(true);
 							setError("");
+							const operation = beginAppOperation("feedback.send");
 							try {
+								operation.step("collect-diagnostics");
+								const logs = await collectFeedbackDiagnostics();
+								operation.step("submit");
 								await submitFeedback({
 									title: `${sentiments.find((item) => item.value === sentiment)?.emoji ?? ""} ${message}`,
 									subject: "other",
 									message,
 									files,
-									logs: await collectFeedbackDiagnostics(),
+									logs,
+									onUploadProgress: setUploadProgress,
 								});
+								operation.finish("succeeded");
 								setSent(true);
 								if (userId)
 									updateFeedbackDraft(userId, {
-										sentiment: null,
+										sentiment: DEFAULT_FEEDBACK_SENTIMENT,
 										message: "",
 										files: [],
 									});
 							} catch (error) {
+								operation.finish("failed");
 								setError(feedbackErrorMessage(error));
 							} finally {
 								sendingRef.current = false;
 								setSending(false);
+								setUploadProgress(null);
 							}
 						}}
 					>
@@ -279,7 +289,7 @@ export function FeedbackDialog({
 							onPress={() => picker.current?.click()}
 						>
 							<Paperclip className="size-4" aria-hidden="true" />
-							{t("common.feedback.attachFiles", "Attach files")}
+							{t("common.feedback.attachFilesWithLimit", "Attach files (50 MB)")}
 						</Button>
 						{files.length > 0 && (
 							<div className="flex flex-col gap-1">
@@ -311,11 +321,16 @@ export function FeedbackDialog({
 							</div>
 						)}
 						<Description className={styles.diagnostics}>
-							{t(
-								"common.feedback.diagnostics",
-								"Diagnostic logs will be attached. Feedback will be sent to support@recordly.dev.",
-							)}
+							{t("common.feedback.diagnostics", "Diagnostic logs will be attached.")}
 						</Description>
+						{uploadProgress !== null && (
+							<progress
+								className="w-full"
+								aria-label={t("common.feedback.attachFiles", "Attach files")}
+								value={uploadProgress}
+								max={100}
+							/>
+						)}
 						{error && (
 							<Description role="alert" className="text-danger">
 								{error} <ErrorReportButton error={error} />

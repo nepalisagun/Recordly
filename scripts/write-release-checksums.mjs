@@ -6,7 +6,14 @@ const projectRoot = process.cwd();
 const releaseRoot = path.join(projectRoot, "release");
 const outputFileName = process.argv[2] ?? "SHA256SUMS.txt";
 const outputPath = path.join(releaseRoot, outputFileName);
-const releaseArtifactExtensions = new Set([".AppImage", ".blockmap", ".dmg", ".exe", ".zip"]);
+const releaseArtifactExtensions = new Set([
+	".AppImage",
+	".blockmap",
+	".dmg",
+	".exe",
+	".zip",
+	".zsync",
+]);
 
 function relativePath(filePath) {
 	return path.relative(projectRoot, filePath).replaceAll("\\", "/");
@@ -22,6 +29,9 @@ function isReleaseArtifact(fileName) {
 	}
 
 	if (fileName.startsWith("latest") && fileName.endsWith(".yml")) {
+		return true;
+	}
+	if (/^ffmpeg-sources-(?:macos|linux|windows)-(?:x64|arm64)\.tar\.gz$/.test(fileName)) {
 		return true;
 	}
 

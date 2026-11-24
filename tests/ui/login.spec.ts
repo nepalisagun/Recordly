@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
-import { productionTest as test } from "./production";
 import { completeSupabaseSignIn } from "./auth";
-import { installDesktopBridge } from "./bridge";
+import { installDesktopBridge, installDesktopBridgeOverrides } from "./bridge";
+import { productionTest as test } from "./production";
 
 async function captureSignInReports(page: Page) {
 	const reports: { error: string; logs: string }[] = [];
@@ -13,6 +13,61 @@ async function captureSignInReports(page: Page) {
 		},
 	);
 	return reports;
+}
+
+for (const returning of [false, true]) {
+	test(`Windows ${returning ? "existing profiles" : "new profiles"} use the same sign-in and Start recording flow`, async ({
+		page,
+	}) => {
+		test.slow();
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		await page.setViewportSize({ width: 760, height: 760 });
+		await installDesktopBridge(page, "preview.mp4", { signedIn: false, onboarded: returning });
+		await installDesktopBridgeOverrides(page, () => {
+			window.electronAPI.getPlatform = async () => "win32";
+			window.electronAPI.resolveStartupOnboarding = async (action) => {
+				if (action === "continue") document.documentElement.dataset.hudOpened = "true";
+				return true;
+			};
+			window.electronAPI.showProjectDashboard = async () => {
+				document.documentElement.dataset.dashboardOpened = "true";
+			};
+		});
+		await page.goto("/?windowType=onboarding&startup=1", {
+			waitUntil: "commit",
+		});
+		const login = page.getByRole("dialog", { name: "Welcome to Recordly" });
+		const email = login.getByRole("textbox", { name: /^Email\*?$/ });
+		const artwork = login.locator("[data-onboarding-artwork]");
+		await expect(email).toBeVisible({ timeout: 45_000 });
+		await expect
+			.poll(() =>
+				email.evaluate((field: HTMLInputElement) =>
+					Math.abs(field.getBoundingClientRect().width - field.offsetWidth),
+				),
+			)
+			.toBeLessThan(2);
+		await artwork.evaluate((element) => element.setAttribute("data-layout-check", "same"));
+		await expect(login.getByRole("button", { name: "Continue as guest" })).toBeEnabled();
+		await email.fill("test@email.com");
+		await login.getByRole("button", { name: "Email me a code" }).click();
+		await login
+			.getByRole("textbox", { name: "Enter code sent to test@email.com" })
+			.fill("123456");
+		await login.getByRole("button", { name: "Verify and continue", exact: true }).click();
+
+		const documentRoot = page.locator("html");
+		// Windows has no permissions page, so sign-in finishes on the account page.
+		const start = login.getByRole("button", { name: "Start recording", exact: true });
+		await expect(start).toBeEnabled();
+		await expect(login).toHaveAttribute("data-onboarding-state", "login");
+		await expect(artwork).toHaveAttribute("data-layout-check", "same");
+		await expect(email).toHaveCount(0);
+		await expect(documentRoot).not.toHaveAttribute("data-hud-opened");
+		await start.click();
+		await expect(documentRoot).toHaveAttribute("data-hud-opened", "true");
+		await expect(documentRoot).not.toHaveAttribute("data-dashboard-opened");
+	});
 }
 
 test("sign-in keeps all providers visible and marks unavailable providers disabled", async ({
@@ -48,7 +103,7 @@ test("sign-in keeps all providers visible and marks unavailable providers disabl
 	const emailCode = login.getByRole("button", { name: "Email me a code" });
 	await expect(login.locator("[data-signin-divider]")).toHaveText("or");
 	const passwordSwitch = login.getByRole("button", {
-		name: "Or use password to sign in",
+		name: "Use password",
 		exact: true,
 	});
 	await expect(passwordSwitch).toHaveCount(1);
@@ -66,6 +121,7 @@ test("sign-in keeps all providers visible and marks unavailable providers disabl
 	page.on("request", (request) => {
 		if (request.url().includes("/auth/v1/otp")) codeRequests++;
 	});
+	await email.focus();
 	await expect(emailCode).toBeVisible();
 	await expect(emailCode).toBeEnabled();
 	await emailCode.click();
@@ -87,9 +143,7 @@ test("sign-in keeps all providers visible and marks unavailable providers disabl
 	});
 });
 
-test("production onboarding allows OAuth before provider discovery finishes", async ({
-	page,
-}) => {
+test("production onboarding allows OAuth before provider discovery finishes", async ({ page }) => {
 	await installDesktopBridge(page, "preview.mp4", { signedIn: false, onboarded: false });
 	await page.addInitScript(() => {
 		window.electronAPI.openExternalUrl = async (url) => {
@@ -239,7 +293,7 @@ for (const [label, provider] of [
 	});
 }
 
-test("restored Supabase sessions show the account and sign-out requires authentication again", async ({
+test("restored Supabase sessions show the account and sign-out offers guest onboarding", async ({
 	page,
 }) => {
 	await installDesktopBridge(page);
@@ -254,36 +308,37 @@ test("restored Supabase sessions show the account and sign-out requires authenti
 	const logout = page.waitForRequest((request) => request.url().includes("/auth/v1/logout"));
 	await account.getByRole("button", { name: "Log out", exact: true }).click();
 	await logout;
-	const login = page.getByRole("dialog", { name: "Sign in to Recordly", exact: true });
+	const login = page.getByRole("dialog", { name: "Welcome to Recordly", exact: true });
 	await expect(login).toBeVisible();
 	await page.reload();
 	await expect(login).toBeVisible();
-	await expect(login.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+	await expect(
+		login.getByRole("button", { name: "Continue as guest", exact: true }),
+	).toBeEnabled();
 });
 
-test("returning users sign in through a compact popup with the requested copy", async ({
-	page,
-}) => {
+test("existing signed-out profiles sign in through shared onboarding", async ({ page }) => {
 	await installDesktopBridge(page, "preview.mp4", { signedIn: false, onboarded: true });
 	await page.goto("/?windowType=editor");
-	const login = page.getByRole("dialog", { name: "Sign in to Recordly", exact: true });
+	const login = page.getByRole("dialog", { name: "Welcome to Recordly", exact: true });
 	await expect(login).toBeVisible({ timeout: 20000 });
 	await expect(
 		login.getByRole("heading", {
-			name: "Sign into Recordly",
+			name: "Welcome to Recordly",
 			exact: true,
 		}),
 	).toBeVisible();
-	await page.screenshot({ path: "test-results/signin-polished.png", animations: "disabled" });
 	await expect(login.getByRole("heading")).toHaveCount(1);
 	await expect(login.getByText("Sign in to get started", { exact: true })).toHaveCount(0);
-	await expect(login.getByRole("navigation", { name: "Onboarding pages" })).toHaveCount(0);
+	await expect(login.getByRole("navigation", { name: "Onboarding pages" })).toBeVisible();
+	await expect(login.getByRole("button", { name: "Continue as guest" })).toBeEnabled();
 	await page.keyboard.press("Escape");
 	await expect(login).toBeVisible();
 	await login.getByRole("textbox", { name: /^Email\*?$/ }).fill("test@email.com");
 	await login.getByRole("button", { name: "Email me a code" }).click();
-	await expect(login.getByText(/^Enter code sent to /)).toBeVisible();
-	await completeSupabaseSignIn(page);
+	await login.getByRole("textbox", { name: "Enter code sent to test@email.com" }).fill("123456");
+	await login.getByRole("button", { name: "Verify and continue", exact: true }).click();
+	await login.getByRole("button", { name: "Start recording", exact: true }).click();
 	await expect(login).not.toBeVisible();
 	await page.getByRole("button", { name: "Recordly account", exact: true }).click();
 	await expect(page.getByRole("dialog", { name: "Account menu", exact: true })).toBeVisible();

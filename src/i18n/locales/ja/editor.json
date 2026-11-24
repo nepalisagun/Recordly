@@ -65,7 +65,7 @@
 		"copyLink": "リンクをコピー",
 		"shareLink": "共有リンク",
 		"saveLinkFailed": "共有ページを作成しましたが、リンクをローカルに保存できませんでした",
-		"verifyPlanFailed": "クラウドプランを確認できませんでした。",
+		"verifyPlanFailed": "プランを確認できませんでした。",
 		"refreshPlan": "プラン情報を更新",
 		"share": "共有",
 		"signInToShare": "ログインして共有",
@@ -84,6 +84,8 @@
 		"videos": "動画"
 	},
 	"playback": {
+		"resolution": "再生解像度",
+		"fullResolution": "フル",
 		"play": "再生",
 		"pause": "一時停止",
 		"skipBack": "後ろにスキップ",
@@ -243,6 +245,7 @@
 		"savingGif": "GIF を保存中…",
 		"encodingGif": "GIF を仕上げ中…",
 		"errorCopied": "エラーをコピーしました",
+		"nvidiaCudaFallback": "NVIDIA CUDA での書き出しに失敗しました。Recordly は別の書き出し方法を試しています。",
 		"errorCopyFailed": "コピーできませんでした。エラーテキストを選択して手動でコピーしてください。",
 		"copyError": "エラーをコピー"
 	},
@@ -250,8 +253,10 @@
 		"processingAudioEdits": "速度変更とオーバーレイを音声に適用中"
 	},
 	"toolbar": {
-		"addLayer": "レイヤーを追加",
-		"splitClip": "クリップを分割 (C)"
+		"addLayer": "追加",
+		"splitClip": "クリップを分割 (C)",
+		"trimStart": "再生ヘッドの位置まで先頭をトリミング ({{shortcut}})",
+		"trimEnd": "再生ヘッドの位置まで末尾をトリミング ({{shortcut}})"
 	},
 	"timeline": {
 		"expand": "タイムラインを展開",

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { productionTest } from "./production";
 import { installDesktopBridge, installDesktopBridgeOverrides } from "./bridge";
+import { productionTest } from "./production";
 
 for (const width of [390, 760]) {
 	test(`dev permission preview opens real settings without simulating grants (${width}px)`, async ({
@@ -30,11 +30,12 @@ for (const width of [390, 760]) {
 		});
 		await page.goto("/?windowType=onboarding&onboardingPreview=1");
 		const onboarding = page.getByRole("dialog", { name: "Welcome to Recordly" });
-		const next = onboarding.getByRole("button", { name: "Continue", exact: true });
+		const next = onboarding.getByRole("button", { name: "Next", exact: true });
+		const start = onboarding.getByRole("button", { name: "Start recording", exact: true });
 		await expect(next).toBeVisible({ timeout: 30000 });
 		const before = (await next.boundingBox())!;
 		await next.click();
-		const start = onboarding.getByRole("button", { name: "Start recording", exact: true });
+		await expect(onboarding).toHaveAttribute("data-onboarding-state", "permissions");
 		await expect(start).toBeDisabled();
 		const after = (await start.boundingBox())!;
 		expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
@@ -49,6 +50,7 @@ for (const width of [390, 760]) {
 		await onboarding.getByRole("button", { name: "Allow Accessibility", exact: true }).click();
 		await expect(page.locator("html")).toHaveAttribute("data-accessibility-opened", "true");
 		await expect(start).toBeDisabled();
+		await expect(onboarding.getByText(/^If the drag panel doesn't appear/)).toBeVisible();
 		await expect(page.getByRole("dialog")).toHaveCount(1);
 		await expect(page.getByText("Drop Recordly here to add it.")).toHaveCount(0);
 		await expect(onboarding.getByRole("status", { name: /Allowed/ })).toHaveCount(0);
@@ -75,11 +77,12 @@ test("dev simulation resets granted rows and uses their normal Allow buttons", a
 	await page.clock.install();
 	await page.goto("/?windowType=onboarding&onboardingPreview=1");
 	const onboarding = page.getByRole("dialog", { name: "Welcome to Recordly" });
-	await onboarding.getByRole("button", { name: "Continue", exact: true }).click();
+	const next = onboarding.getByRole("button", { name: "Next", exact: true });
+	const start = onboarding.getByRole("button", { name: "Start recording", exact: true });
+	await next.click();
 	await expect(
 		onboarding.getByRole("status", { name: "Screen Recording: Allowed" }),
 	).toBeVisible();
-	const start = onboarding.getByRole("button", { name: "Start recording", exact: true });
 	await expect(start).toBeEnabled();
 	const controls = onboarding.locator("[data-permission-preview-controls]");
 	await expect(controls.getByRole("button")).toHaveCount(1);

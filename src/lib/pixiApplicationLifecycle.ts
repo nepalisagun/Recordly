@@ -19,6 +19,10 @@ const STAGE_DESTROY_OPTIONS = {
 	textureSource: false,
 } as const;
 
+type PixiBatchPipe = {
+	_activeBatches?: Record<string, { batches: object[] | null; batchIndex: number }> | null;
+};
+
 function reportCleanupError(app: Application, error: unknown): void {
 	const context = destroyContexts.get(app) ?? "Pixi application";
 	console.warn(`[PixiApplication] Failed to clean up ${context}:`, error);
@@ -44,6 +48,15 @@ function completeDestroy(app: Application): void {
 	if (completedCleanups.has(app)) return;
 	completedCleanups.add(app);
 
+	// Backport PixiJS #11780 for the locked 8.14 renderer. Batcher.begin() already
+	// pooled the entries past batchIndex. Destroy must only return the live ones.
+	const batchPipe = app.renderer?.renderPipes?.batch as unknown as PixiBatchPipe | undefined;
+	for (const batcher of Object.values(batchPipe?._activeBatches ?? {})) {
+		if (batcher.batches && batcher.batches.length > batcher.batchIndex) {
+			batcher.batches.length = batcher.batchIndex;
+		}
+	}
+
 	if (initializationStates.get(app) !== "initialized") {
 		destroyFailedApplication(app);
 		return;
@@ -54,6 +67,56 @@ function completeDestroy(app: Application): void {
 	} catch (error) {
 		reportCleanupError(app, error);
 	}
+}
+
+type InternalFilterData = {
+	skip?: boolean;
+};
+
+type InternalFilterSystem = {
+	_filterStackIndex?: number;
+	_filterStack?: InternalFilterData[];
+	_getPreviousFilterData?: () => InternalFilterData | undefined;
+};
+
+function patchPixiFilterSystem(app: Application): void {
+	const renderer = app.renderer as unknown as {
+		filter?: InternalFilterSystem;
+		runners?: {
+			renderStart?: {
+				add: (item: { renderStart: () => void }) => void;
+			};
+		};
+	};
+	const filterSystem = renderer?.filter;
+	if (!filterSystem) {
+		return;
+	}
+
+	filterSystem._getPreviousFilterData = function _getPreviousFilterData(
+		this: InternalFilterSystem,
+	): InternalFilterData | undefined {
+		let index = (this._filterStackIndex ?? 0) - 1;
+		while (index > 0) {
+			index--;
+			const previousFilterData = this._filterStack?.[index];
+			if (previousFilterData && !previousFilterData.skip) {
+				return previousFilterData;
+			}
+		}
+		return undefined;
+	};
+
+	renderer.runners?.renderStart?.add({
+		renderStart() {
+			if (
+				typeof filterSystem._filterStackIndex === "number" &&
+				filterSystem._filterStackIndex !== 0
+			) {
+				filterSystem._filterStackIndex = 0;
+			}
+		},
+	});
 }
 
 export async function initializePixiApplication(
@@ -67,6 +130,7 @@ export async function initializePixiApplication(
 	initializationStates.set(app, "initializing");
 	try {
 		await app.init(options);
+		patchPixiFilterSystem(app);
 		initializationStates.set(app, "initialized");
 	} catch (error) {
 		initializationStates.set(app, "failed");

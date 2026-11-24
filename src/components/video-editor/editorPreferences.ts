@@ -1,14 +1,21 @@
-import { normalizeCustomGradients } from "./customGradients";
 import { DESKTOP_WALLPAPER } from "@/lib/desktopWallpaper";
-import { normalizeExportPreferences, type ExportPreferences } from "./exportPreferences";
 import { loadAppSetting, saveAppSetting } from "../../lib/appSettings";
+import { normalizeCustomGradients } from "./customGradients";
+import { type ExportPreferences, normalizeExportPreferences } from "./exportPreferences";
 import {
 	getDefaultBorderRadiusPercent,
 	legacyBorderRadiusPixelsToPercent,
+	normalizePadding,
 	normalizeProjectEditor,
 	type ProjectEditorState,
 	stripPersistedDevMotionBlurSettings,
 } from "./projectPersistence";
+import {
+	type CaptureSourceKind,
+	DEFAULT_PADDING,
+	DEFAULT_WINDOW_PADDING,
+	type Padding,
+} from "./types";
 
 type PersistedEditorControls = Pick<
 	ProjectEditorState,
@@ -28,6 +35,7 @@ type PersistedEditorControls = Pick<
 	| "connectedZoomEasing"
 	| "showCursor"
 	| "loopCursor"
+	| "alwaysUsePointerCursor"
 	| "cursorStyle"
 	| "cursorSize"
 	| "cursorSmoothing"
@@ -77,7 +85,13 @@ export interface EditorPreset {
 	snapshot: EditorPresetSnapshot;
 }
 
-export interface EditorPreferences extends PersistedEditorControls, ExportPreferences {
+export interface EditorPreferences
+	extends Omit<PersistedEditorControls, "padding">,
+		ExportPreferences {
+	/** Last padding used for display and area recordings. */
+	screenPadding: Padding;
+	/** Last padding used for window recordings. */
+	windowPadding: Padding;
 	autoApplyFreshRecordingAutoZooms: boolean;
 	borderRadiusUnit: "percent";
 	customAspectWidth: string;
@@ -89,7 +103,8 @@ export interface EditorPreferences extends PersistedEditorControls, ExportPrefer
 	whisperModelPath: string | null;
 }
 
-export const EDITOR_PREFERENCES_STORAGE_KEY = "recordly.editor.preferences";
+const LEGACY_EDITOR_PREFERENCES_STORAGE_KEY = "recordly.editor.preferences";
+export const EDITOR_PREFERENCES_STORAGE_KEY = "recordly.editor.preferences.v2";
 export const EDITOR_PRESETS_STORAGE_KEY = "recordly.editor.presets";
 
 const DEFAULT_EDITOR_CONTROLS = normalizeProjectEditor({});
@@ -112,6 +127,7 @@ export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
 	connectedZoomEasing: DEFAULT_EDITOR_CONTROLS.connectedZoomEasing,
 	showCursor: DEFAULT_EDITOR_CONTROLS.showCursor,
 	loopCursor: DEFAULT_EDITOR_CONTROLS.loopCursor,
+	alwaysUsePointerCursor: DEFAULT_EDITOR_CONTROLS.alwaysUsePointerCursor,
 	cursorStyle: DEFAULT_EDITOR_CONTROLS.cursorStyle,
 	cursorSize: DEFAULT_EDITOR_CONTROLS.cursorSize,
 	cursorSmoothing: DEFAULT_EDITOR_CONTROLS.cursorSmoothing,
@@ -133,7 +149,8 @@ export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
 	cursorIdleHide: DEFAULT_EDITOR_CONTROLS.cursorIdleHide,
 	borderRadius: DEFAULT_EDITOR_CONTROLS.borderRadius,
 	borderRadiusUnit: "percent",
-	padding: DEFAULT_EDITOR_CONTROLS.padding,
+	screenPadding: { ...DEFAULT_PADDING },
+	windowPadding: { ...DEFAULT_WINDOW_PADDING },
 	webcam: DEFAULT_EDITOR_CONTROLS.webcam,
 	aspectRatio: DEFAULT_EDITOR_CONTROLS.aspectRatio,
 	...normalizeExportPreferences({}),
@@ -197,8 +214,8 @@ function normalizeEditorPresetSnapshot(candidate: unknown): EditorPresetSnapshot
 		cropRegion: raw.cropRegion,
 	}).cropRegion;
 	const normalizedControls = normalizeEditorControls(
-		normalizedPreferences,
-		normalizedPreferences,
+		{ ...normalizedPreferences, padding: raw.padding },
+		{ ...normalizedPreferences, padding: DEFAULT_PADDING },
 	);
 	const {
 		sourcePath: _sourcePath,
@@ -274,8 +291,8 @@ export function serializeEditorPresetSnapshot(snapshot: EditorPresetSnapshot): s
 }
 
 function normalizeEditorControls(
-	raw: Partial<EditorPreferences>,
-	fallback: EditorPreferences,
+	raw: PartialEditorControls,
+	fallback: PersistedEditorControls,
 ): PersistedEditorControls {
 	const sanitizedRaw = stripPersistedDevMotionBlurSettings(raw);
 	const candidate: PartialEditorControls = {
@@ -298,6 +315,8 @@ function normalizeEditorControls(
 		connectedZoomEasing: sanitizedRaw.connectedZoomEasing ?? fallback.connectedZoomEasing,
 		showCursor: sanitizedRaw.showCursor ?? fallback.showCursor,
 		loopCursor: sanitizedRaw.loopCursor ?? fallback.loopCursor,
+		alwaysUsePointerCursor:
+			sanitizedRaw.alwaysUsePointerCursor ?? fallback.alwaysUsePointerCursor,
 		cursorStyle: sanitizedRaw.cursorStyle ?? fallback.cursorStyle,
 		cursorSize: sanitizedRaw.cursorSize ?? fallback.cursorSize,
 		cursorSmoothing: sanitizedRaw.cursorSmoothing ?? fallback.cursorSmoothing,
@@ -355,6 +374,7 @@ function normalizeEditorControls(
 		connectedZoomEasing: normalized.connectedZoomEasing,
 		showCursor: normalized.showCursor,
 		loopCursor: normalized.loopCursor,
+		alwaysUsePointerCursor: normalized.alwaysUsePointerCursor,
 		cursorStyle: normalized.cursorStyle,
 		cursorSize: normalized.cursorSize,
 		cursorSmoothing: normalized.cursorSmoothing,
@@ -391,8 +411,10 @@ export function normalizeEditorPreferences(
 	candidate: unknown,
 	fallback: EditorPreferences = DEFAULT_EDITOR_PREFERENCES,
 ): EditorPreferences {
-	const raw =
-		candidate && typeof candidate === "object" ? (candidate as Partial<EditorPreferences>) : {};
+	const { padding: legacyPadding, ...raw } =
+		candidate && typeof candidate === "object"
+			? (candidate as Partial<EditorPreferences> & { padding?: unknown })
+			: {};
 	const controls =
 		raw.borderRadiusUnit === "percent" || typeof raw.borderRadius !== "number"
 			? raw
@@ -404,8 +426,16 @@ export function normalizeEditorPreferences(
 							: legacyBorderRadiusPixelsToPercent(raw.borderRadius),
 				};
 
+	const { padding: _sharedPadding, ...normalizedControls } = normalizeEditorControls(controls, {
+		...fallback,
+		padding: fallback.screenPadding,
+	});
+
 	return {
-		...normalizeEditorControls(controls, fallback),
+		...normalizedControls,
+		screenPadding: normalizePadding(raw.screenPadding, fallback.screenPadding),
+		// Carry shared padding forward for windows only; screens start at zero.
+		windowPadding: normalizePadding(raw.windowPadding ?? legacyPadding, fallback.windowPadding),
 		...normalizeExportPreferences({ ...fallback, ...raw }),
 		borderRadiusUnit: "percent",
 		customAspectWidth: normalizePositiveIntegerString(
@@ -432,22 +462,55 @@ export function normalizeEditorPreferences(
 	};
 }
 
-export function loadEditorPreferences(): EditorPreferences {
-	const persisted = loadAppSetting<unknown>(EDITOR_PREFERENCES_STORAGE_KEY);
-	if (persisted !== null) {
-		return normalizeEditorPreferences(persisted);
-	}
+function isEditorPreferenceRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
+function readStoredEditorPreferences(key: string): Record<string, unknown> | null {
+	const persisted = loadAppSetting<unknown>(key);
+	if (isEditorPreferenceRecord(persisted)) return persisted;
 	try {
-		const stored = globalThis.localStorage?.getItem(EDITOR_PREFERENCES_STORAGE_KEY);
-		if (!stored) {
-			return DEFAULT_EDITOR_PREFERENCES;
-		}
-
-		return normalizeEditorPreferences(JSON.parse(stored));
+		const stored = globalThis.localStorage?.getItem(key);
+		const parsed: unknown = stored ? JSON.parse(stored) : null;
+		return isEditorPreferenceRecord(parsed) ? parsed : null;
 	} catch {
-		return DEFAULT_EDITOR_PREFERENCES;
+		return null;
 	}
+}
+
+export function loadEditorPreferences(): EditorPreferences {
+	const current = readStoredEditorPreferences(EDITOR_PREFERENCES_STORAGE_KEY);
+	if (current !== null) return normalizeEditorPreferences(current);
+
+	const previous = readStoredEditorPreferences(LEGACY_EDITOR_PREFERENCES_STORAGE_KEY);
+	if (!previous) return DEFAULT_EDITOR_PREFERENCES;
+
+	// Older versions wrote their defaults alongside user values. Start with the
+	// new controls but retain window padding, the resource library, and caption tools.
+	const {
+		windowPadding,
+		customWallpapers,
+		customGradients,
+		customColors,
+		whisperExecutablePath,
+		whisperModelPath,
+	} = normalizeEditorPreferences(previous);
+	return {
+		...DEFAULT_EDITOR_PREFERENCES,
+		windowPadding,
+		customWallpapers,
+		customGradients,
+		customColors,
+		whisperExecutablePath,
+		whisperModelPath,
+	};
+}
+
+export function getPaddingPreference(
+	preferences: Pick<EditorPreferences, "screenPadding" | "windowPadding">,
+	kind: CaptureSourceKind | null,
+): Padding {
+	return { ...(kind === "window" ? preferences.windowPadding : preferences.screenPadding) };
 }
 
 export type EditorPreferencesPatch = Omit<Partial<EditorPreferences>, "webcam"> & {

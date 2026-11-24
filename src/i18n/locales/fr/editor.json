@@ -65,7 +65,7 @@
 		"copyLink": "Copier le lien",
 		"shareLink": "Lien de partage",
 		"saveLinkFailed": "Le partage a été créé, mais son lien n’a pas pu être enregistré localement",
-		"verifyPlanFailed": "Impossible de vérifier votre offre cloud.",
+		"verifyPlanFailed": "Impossible de vérifier votre offre.",
 		"refreshPlan": "Actualiser l’offre",
 		"share": "Partager",
 		"signInToShare": "Connectez-vous pour partager",
@@ -84,6 +84,8 @@
 		"videos": "Vidéos"
 	},
 	"playback": {
+		"resolution": "Résolution de lecture",
+		"fullResolution": "Intégrale",
 		"play": "Lecture",
 		"pause": "Pause",
 		"skipBack": "Reculer",
@@ -243,6 +245,7 @@
 		"savingGif": "Enregistrement du GIF…",
 		"encodingGif": "Finalisation du GIF…",
 		"errorCopied": "Erreur copiée",
+		"nvidiaCudaFallback": "L'export NVIDIA CUDA a échoué. Recordly essaie une autre méthode d'export.",
 		"errorCopyFailed": "Impossible de copier. Sélectionnez le texte de l’erreur et copiez-le manuellement.",
 		"copyError": "Copier l’erreur"
 	},
@@ -250,8 +253,10 @@
 		"processingAudioEdits": "Traitement de l’audio avec modifications de vitesse/superposition"
 	},
 	"toolbar": {
-		"addLayer": "Ajouter une couche",
-		"splitClip": "Diviser le clip (C)"
+		"addLayer": "Ajouter",
+		"splitClip": "Diviser le clip (C)",
+		"trimStart": "Couper le début jusqu'à la tête de lecture ({{shortcut}})",
+		"trimEnd": "Couper la fin après la tête de lecture ({{shortcut}})"
 	},
 	"timeline": {
 		"expand": "Développer la timeline",

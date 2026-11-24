@@ -1,12 +1,13 @@
-import { translate } from "@/i18n/runtime";
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "@/components/ui/toast";
 import type { useI18n } from "@/contexts/I18nContext";
 import type { useShortcuts } from "@/contexts/ShortcutsContext";
+import { translate } from "@/i18n/runtime";
 import { useVideoEditorAudio } from "../audio/useVideoEditorAudio";
 import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useTimelineState } from "../state/useTimelineState";
+import { placeSpanAfter } from "../timeline/hooks/utils/timelineDuplicateUtils";
 import type { TimelineEditorHandle } from "../timeline/TimelineEditor";
 import type { EditorEffectSection } from "../types";
 import type { VideoPlaybackRef } from "../VideoPlayback";
@@ -49,6 +50,14 @@ type Input = {
 	handleRedo: () => void;
 };
 
+type CopiedTimelineRegion =
+	| { kind: "zoom"; region: ReturnType<typeof useTimelineState>["zoomRegions"][number] }
+	| {
+			kind: "annotation";
+			region: ReturnType<typeof useTimelineState>["annotationRegions"][number];
+	  }
+	| { kind: "audio"; region: ReturnType<typeof useTimelineState>["audioRegions"][number] };
+
 export function useTimelineEditingController(input: Input) {
 	const { timeline } = input;
 	const handleSourceFallbackLoadError = useCallback((error: unknown) => {
@@ -66,6 +75,7 @@ export function useTimelineEditingController(input: Input) {
 		videoSourcePath: input.videoSourcePath,
 		duration: input.duration,
 		loopCursor: input.appearance.loopCursor,
+		alwaysUsePointerCursor: input.appearance.alwaysUsePointerCursor,
 		timeline,
 	});
 	const projection = useTimelineProjection({
@@ -99,6 +109,8 @@ export function useTimelineEditingController(input: Input) {
 		videoPlaybackRef: input.videoPlaybackRef,
 		timelineRef: input.timelineRef,
 		playSourceAudioPreview: audio.playSourceAudioPreview,
+		clipRegions: timeline.clipRegions,
+		zoomRegions: projection.effectiveZoomRegions,
 		timelinePlayheadTime: projection.timelinePlayheadTime,
 		timelineDuration: projection.timelineDuration,
 	});
@@ -188,6 +200,96 @@ export function useTimelineEditingController(input: Input) {
 		nextAnnotationZIndexRef: input.nextAnnotationZIndexRef,
 	});
 
+	const copiedRegionRef = useRef<CopiedTimelineRegion | null>(null);
+
+	const getSelectedRegion = (): CopiedTimelineRegion | null => {
+		const zoom = timeline.zoomRegions.find(({ id }) => id === timeline.selectedZoomId);
+		if (zoom) return { kind: "zoom", region: zoom };
+		const annotation = timeline.annotationRegions.find(
+			({ id }) => id === timeline.selectedAnnotationId,
+		);
+		if (annotation) return { kind: "annotation", region: annotation };
+		const audioRegion = timeline.audioRegions.find(({ id }) => id === timeline.selectedAudioId);
+		if (audioRegion) return { kind: "audio", region: audioRegion };
+		return null;
+	};
+
+	const copySelectedRegion = () => {
+		const selected = getSelectedRegion();
+		if (!selected) return false;
+		copiedRegionRef.current = selected;
+		return true;
+	};
+
+	/** Places a copy after the source and returns it, or null when there is no room. */
+	const insertRegionCopy = (copied: CopiedTimelineRegion): CopiedTimelineRegion | null => {
+		const totalMs = Math.round(projection.timelineDuration * 1000);
+
+		if (copied.kind === "zoom") {
+			const span = placeSpanAfter(copied.region, totalMs, timeline.zoomRegions);
+			if (span) {
+				const region = {
+					...copied.region,
+					...span,
+					id: `zoom-${input.nextZoomIdRef.current++}`,
+				};
+				timeline.setZoomRegions((current) => [...current, region]);
+				zoomCommands.handleSelectZoom(region.id);
+				return { kind: "zoom", region };
+			}
+		} else if (copied.kind === "annotation") {
+			const span = placeSpanAfter(copied.region, totalMs);
+			if (span) {
+				const region = {
+					...copied.region,
+					...span,
+					id: `annotation-${input.nextAnnotationIdRef.current++}`,
+					zIndex: input.nextAnnotationZIndexRef.current++,
+				};
+				timeline.setAnnotationRegions((current) => [...current, region]);
+				handleSelectAnnotation(region.id);
+				return { kind: "annotation", region };
+			}
+		} else {
+			const trackIndex = copied.region.trackIndex ?? 0;
+			const sameTrack = timeline.audioRegions.filter(
+				(region) => (region.trackIndex ?? 0) === trackIndex,
+			);
+			const span = placeSpanAfter(copied.region, totalMs, sameTrack);
+			if (span) {
+				const region = {
+					...copied.region,
+					...span,
+					id: `audio-${input.nextAudioIdRef.current++}`,
+				};
+				timeline.setAudioRegions((current) => [...current, region]);
+				audioCommands.handleSelectAudio(region.id);
+				return { kind: "audio", region };
+			}
+		}
+
+		toast.warning(
+			translate(
+				"notifications.timelineDuplicateNoRoom",
+				"There is no room to duplicate this item.",
+			),
+		);
+		return null;
+	};
+
+	const pasteCopiedRegion = () => {
+		const copied = copiedRegionRef.current;
+		if (!copied) return false;
+		// Chain repeated pastes so each copy lands after the previous one.
+		copiedRegionRef.current = insertRegionCopy(copied) ?? copied;
+		return true;
+	};
+
+	const duplicateSelectedRegion = () => {
+		const selected = getSelectedRegion();
+		if (selected) insertRegionCopy(selected);
+	};
+
 	useEditorGlobalInteractions({
 		timeline,
 		videoPlaybackRef: input.videoPlaybackRef,
@@ -209,5 +311,8 @@ export function useTimelineEditingController(input: Input) {
 		audioCommands,
 		annotationCommands,
 		handleSelectAnnotation,
+		duplicateSelectedRegion,
+		copySelectedRegion,
+		pasteCopiedRegion,
 	};
 }

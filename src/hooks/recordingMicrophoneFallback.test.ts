@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "@/components/ui/toast";
 import {
-	createRecordingMicrophoneFallback,
 	type BrowserMicrophoneProfile,
+	createRecordingMicrophoneFallback,
 } from "./recordingMicrophoneFallback";
 
 vi.mock("@/components/ui/toast", () => ({ toast: { error: vi.fn() } }));
@@ -189,9 +189,34 @@ describe("browser microphone fallback capture", () => {
 		resolveStream(stream);
 		await expect(pending).resolves.toBe(false);
 		expect(track.stop).toHaveBeenCalledOnce();
-		expect(recorder().start).not.toHaveBeenCalled();
+		expect(enumerateDevices).not.toHaveBeenCalled();
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
 		await expect(fallback.stop()).resolves.toBeNull();
 		expect(toast.error).not.toHaveBeenCalled();
+	});
+
+	it("releases the microphone if startup is aborted during device enumeration", async () => {
+		let finishEnumeration!: (devices: MediaDeviceInfo[]) => void;
+		enumerateDevices.mockReturnValue(
+			new Promise<MediaDeviceInfo[]>((resolve) => {
+				finishEnumeration = resolve;
+			}),
+		);
+		let cancelled = false;
+		const fallback = createFallback();
+		const pending = fallback.start({
+			mainStartedAt: 10_000,
+			startWasCancelled: () => cancelled,
+		});
+		await vi.waitFor(() => expect(enumerateDevices).toHaveBeenCalledOnce());
+		cancelled = true;
+		fallback.cleanup();
+		expect(track.stop).toHaveBeenCalledOnce();
+		finishEnumeration([]);
+		await expect(pending).resolves.toBe(false);
+		expect(track.stop).toHaveBeenCalledOnce();
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+		expect(fallback.trackSettings).toBeNull();
 	});
 
 	it.each([
@@ -373,7 +398,7 @@ describe("browser microphone fallback capture", () => {
 		now = 1_250;
 		fallback.pause();
 		now = 1_500;
-		await expect(fallback.storeSidecar(fallback.stop(), "/first.mp4")).resolves.toBeUndefined();
+		await expect(fallback.storeSidecar(fallback.stop(), "/first.mp4")).resolves.toBe(false);
 		expect(toast.error).toHaveBeenCalledWith(
 			"Disk full. Recording was saved without the fallback microphone track.",
 			{ id: "recording-microphone-sidecar-error", duration: 10_000 },
@@ -553,7 +578,6 @@ describe("microphone device label permission", () => {
 	it.each([
 		["labeled", [microphone("Desk")]],
 		["mixed", [microphone("Desk"), microphone("", "second")]],
-		["no audio", [{ kind: "videoinput", deviceId: "camera", label: "" }]],
 	])("does not request label permission for %s inputs", async (_label, devices) => {
 		enumerateDevices.mockResolvedValue(devices);
 		mount();
@@ -567,6 +591,68 @@ describe("microphone device label permission", () => {
 				label: "Micrófono second",
 			});
 		}
+	});
+
+	it("retries an empty list after a microphone is plugged in", async () => {
+		enumerateDevices.mockResolvedValue([]);
+		getUserMedia.mockRejectedValueOnce(new DOMException("No microphone", "NotFoundError"));
+		mount();
+		await flush();
+		expect(microphoneHooks.states[0]).toEqual([]);
+		expect(microphoneHooks.states[3]).toBeNull();
+		enumerateDevices
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([microphone("Desk microphone")]);
+		deviceChange?.();
+		await flush();
+		expect(microphoneHooks.states[0]).toEqual([
+			{ deviceId: "microphone-1", groupId: "group-1", label: "Desk microphone" },
+		]);
+		expect(getUserMedia).toHaveBeenCalledTimes(2);
+		expect(stop).toHaveBeenCalledOnce();
+	});
+
+	it("shares a label request when the device list changes before permission resolves", async () => {
+		let resolve!: (stream: MediaStream) => void;
+		getUserMedia.mockReturnValueOnce(
+			new Promise<MediaStream>((done) => {
+				resolve = done;
+			}),
+		);
+		mount();
+		await flush();
+		deviceChange?.();
+		await flush();
+		enumerateDevices.mockResolvedValue([microphone("Desk microphone")]);
+		resolve(stream);
+		await flush();
+		expect(getUserMedia).toHaveBeenCalledOnce();
+		expect(stop).toHaveBeenCalledOnce();
+		expect(microphoneHooks.states[0]).toEqual([
+			{ deviceId: "microphone-1", groupId: "group-1", label: "Desk microphone" },
+		]);
+	});
+
+	it("lists a microphone plugged in while an empty permission request was pending", async () => {
+		const permission = Promise.withResolvers<MediaStream>();
+		getUserMedia.mockReturnValueOnce(permission.promise);
+		enumerateDevices.mockResolvedValue([]);
+		mount();
+		await flush();
+		const connected = microphone();
+		enumerateDevices.mockResolvedValue([connected]);
+		deviceChange?.();
+		await flush();
+		permission.reject(new DOMException("No microphone when requested", "NotFoundError"));
+		await flush();
+		expect(getUserMedia).toHaveBeenCalledOnce();
+		expect(microphoneHooks.states[0]).toEqual([
+			{
+				deviceId: connected.deviceId,
+				groupId: connected.groupId,
+				label: "Micrófono micropho",
+			},
+		]);
 	});
 
 	it("treats whitespace-only raw labels as hidden", async () => {

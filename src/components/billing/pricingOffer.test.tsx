@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { parseCloudBillingCatalog, type CloudBillingPrice } from "@/types/cloudBilling";
+import { type CloudBillingPrice, parseCloudBillingCatalog } from "@/types/cloudBilling";
 import { getDiscountPercent, getPlusPrice, hasVerifiedCheckoutPrice } from "./pricingOffer";
 
 const state = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 			String(vars?.[key] ?? ""),
 		),
 }));
+
 import { EarlyBirdTag } from "./EarlyBirdTag";
 import { UpgradeButton } from "./UpgradeButton";
 
@@ -48,14 +49,14 @@ beforeEach(() => {
 describe("catalog-driven pricing and promotions", () => {
 	it("preserves a custom label in the visible and accessible names, including its discount", () => {
 		const markup = renderToStaticMarkup(
-			<UpgradeButton label="Get Recordly Cloud" truncateLabel />,
+			<UpgradeButton label="Get Recordly Plus" truncateLabel />,
 		);
-		expect(markup).toContain('aria-label="Get Recordly Cloud"');
-		expect(markup).toContain('title="Get Recordly Cloud"');
-		expect(markup).toContain(">Get Recordly Cloud</span>");
+		expect(markup).toContain('aria-label="Get Recordly Plus"');
+		expect(markup).toContain('title="Get Recordly Plus"');
+		expect(markup).toContain(">Get Recordly Plus</span>");
 		state.prices = [price];
-		expect(renderToStaticMarkup(<UpgradeButton label="Get Recordly Cloud" />)).toContain(
-			'aria-label="Get Recordly Cloud, 40% off"',
+		expect(renderToStaticMarkup(<UpgradeButton label="Get Recordly Plus" />)).toContain(
+			'aria-label="Get Recordly Plus, 40% off"',
 		);
 	});
 
@@ -63,14 +64,14 @@ describe("catalog-driven pricing and promotions", () => {
 		state.messages = {
 			upgradeButtonLabel: "Passer à l’offre supérieure",
 			upgradeShort: "Ancien texte",
-			getCloud: "Obtenir Recordly Cloud",
+			getCloud: "Obtenir Recordly Plus",
 		};
 		const markup = renderToStaticMarkup(<UpgradeButton truncateLabel />);
 		expect(markup).toContain('aria-label="Passer à l’offre supérieure"');
 		expect(markup).toContain('title="Passer à l’offre supérieure"');
 		expect(markup).toContain(">Passer à l’offre supérieure</span>");
 		expect(markup).not.toContain("Ancien texte");
-		expect(markup).not.toContain("Obtenir Recordly Cloud");
+		expect(markup).not.toContain("Obtenir Recordly Plus");
 	});
 
 	it("preserves verified promotional fields across IPC and renderer parsing", () => {
@@ -102,7 +103,7 @@ describe("catalog-driven pricing and promotions", () => {
 		expect(renderToStaticMarkup(<EarlyBirdTag />)).toBe("");
 		const markup = renderToStaticMarkup(<UpgradeButton />);
 		expect(markup).toContain("Upgrade");
-		expect(markup).not.toContain("Upgrade to Cloud");
+		expect(markup).not.toContain("Upgrade to Plus");
 		expect(markup).not.toContain("% off");
 	});
 	it("updates both badges with the calculated discount", () => {

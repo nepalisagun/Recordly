@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BillingProvider } from "./BillingProvider";
+import { useRecordlyAuth } from "@/components/auth/useRecordlyAuth";
+import { BillingSessionProvider } from "./BillingProvider";
 
 const state = vi.hoisted(() => ({
 	slots: [] as { value?: unknown; deps?: readonly unknown[]; cleanup?: () => void }[],
@@ -76,6 +77,7 @@ vi.mock("@/components/video-editor/cloud/endpoint", () => ({
 	CLOUD_SHARE_ENDPOINT: "https://cloud.test",
 }));
 vi.mock("@/components/video-editor/cloud/cloudBillingReads", () => ({
+	getFreshCloudBillingRead: () => undefined,
 	readCloudBilling: (...args: unknown[]) => state.read(...args),
 	invalidateCloudBillingReads: vi.fn(),
 }));
@@ -128,7 +130,7 @@ const flush = async () => {
 };
 function render() {
 	state.index = 0;
-	const result = BillingProvider({ children: null });
+	const result = BillingSessionProvider({ auth: useRecordlyAuth(), children: null });
 	for (const effect of state.effects.splice(0)) effect();
 	return result.props.value;
 }
@@ -159,6 +161,28 @@ afterEach(() => {
 	for (const slot of state.slots) slot.cleanup?.();
 	vi.unstubAllGlobals();
 	vi.useRealTimers();
+});
+
+it("starts the public catalog before session restore and keeps the pending read across sign-in", async () => {
+	const pendingCatalog = deferred<typeof catalog>();
+	state.read.mockImplementation((_endpoint, action) =>
+		action === "catalog" ? pendingCatalog.promise : Promise.resolve(status("free")),
+	);
+	state.auth = { user: null, accessToken: null, loading: true };
+	render();
+	expect(state.read).toHaveBeenCalledExactlyOnceWith(
+		"https://cloud.test",
+		"catalog",
+		undefined,
+		false,
+	);
+
+	state.auth = { user: { id: "alice" }, accessToken: "token-1", loading: false };
+	render();
+	expect(state.read.mock.calls.filter(([, action]) => action === "catalog")).toHaveLength(1);
+	pendingCatalog.resolve(catalog);
+	await flush();
+	expect(render().catalog.prices).toEqual(catalog.prices);
 });
 
 it("retains a verified plan immediately and during a same-account token refresh", async () => {

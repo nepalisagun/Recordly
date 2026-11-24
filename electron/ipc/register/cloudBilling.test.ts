@@ -1,13 +1,15 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { testAppDocument, testAppPath } from "../../testing/rendererFixture";
 
 const mocks = vi.hoisted(() => ({ handle: vi.fn(), openExternal: vi.fn() }));
 vi.mock("electron", () => ({
-	app: { getAppPath: () => "/recordly" },
+	app: { getAppPath: () => testAppPath },
 	ipcMain: { handle: mocks.handle },
 	shell: { openExternal: mocks.openExternal },
 }));
 
+import { parseCloudBillingStatus } from "../../../src/types/cloudBilling";
 import { parseStripeBillingUrl, registerCloudBillingHandlers } from "./cloudBilling";
 
 const endpoint = "https://videos.recordly.dev/api/upload";
@@ -44,7 +46,7 @@ beforeEach(() => {
 	sender = Object.assign(new EventEmitter(), {
 		id: 42,
 		isDestroyed: () => false,
-		mainFrame: { url: "file:///recordly/dist/index.html?windowType=editor" },
+		mainFrame: { url: `${testAppDocument}?windowType=editor` },
 	});
 	fetchMock = vi.fn().mockResolvedValue(Response.json(free));
 	vi.stubGlobal("fetch", fetchMock);
@@ -72,6 +74,39 @@ it("loads public verified pricing without sending an account token or opening a 
 	);
 	expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("authorization");
 	expect(mocks.openExternal).not.toHaveBeenCalled();
+});
+
+it("cancels account requests without interrupting the public price load", async () => {
+	const signals = new Map<string, AbortSignal>();
+	let finish!: (response: Response) => void;
+	const catalogResponse = new Promise<Response>((resolve) => {
+		finish = resolve;
+	});
+	fetchMock.mockImplementation((url: URL, { signal }: { signal: AbortSignal }) => {
+		signals.set(url.pathname, signal);
+		return catalogResponse.then((response) => response.clone());
+	});
+	const catalog = call({ endpoint, action: "catalog" });
+	const status = call();
+	const cancel = mocks.handle.mock.calls.find(
+		([channel]) => channel === "cloud-billing-cancel",
+	)![1];
+	expect(cancel({ sender, senderFrame: sender.mainFrame })).toEqual({ success: true });
+	expect(signals.get("/api/billing")?.aborted).toBe(true);
+	expect(signals.get("/api/billing/catalog")?.aborted).toBe(false);
+	finish(
+		Response.json({
+			prices: [],
+			limits: {
+				freeRecordingLimit: 5,
+				freeMaxRecordingBytes: 1_000_000_000,
+				plusMaxRecordingBytes: 10_000_000_000,
+				storageLimitBytes: 100_000_000_000,
+			},
+		}),
+	);
+	await expect(catalog).resolves.toMatchObject({ success: true });
+	await expect(status).resolves.toMatchObject({ success: false });
 });
 
 describe("trusted Stripe links", () => {
@@ -309,4 +344,48 @@ it("rejects foreign main frames and embedded frames before billing networking", 
 	}
 	expect(fetchMock).not.toHaveBeenCalled();
 	expect(mocks.openExternal).not.toHaveBeenCalled();
+});
+
+it("shows an unfinished Plus checkout as a free account that can reach the billing portal", async () => {
+	const incomplete = {
+		billing: {
+			...free.billing,
+			plan: "pro",
+			subscriptionStatus: "incomplete",
+			portalAvailable: true,
+		},
+		usage: { ...free.usage, recordingLimit: null, storageLimitBytes: null },
+	};
+	fetchMock.mockResolvedValue(Response.json(incomplete));
+	const result = await call();
+	expect(result).toMatchObject({
+		success: true,
+		billing: { plan: "free", subscriptionStatus: "incomplete", portalAvailable: true },
+		usage: { recordingLimit: 0, storageLimitBytes: null },
+	});
+	// The renderer validates the bridge result again; that second parse must agree.
+	expect(parseCloudBillingStatus(result)).toMatchObject({
+		billing: { plan: "free" },
+		usage: { recordingLimit: 0 },
+	});
+});
+
+it("names the failing billing step without reflecting provider details", async () => {
+	fetchMock.mockResolvedValueOnce(
+		Response.json({ error: "secret-key-diagnostic" }, { status: 500 }),
+	);
+	expect(await call()).toMatchObject({
+		success: false,
+		error: expect.stringContaining("HTTP 500"),
+	});
+	fetchMock.mockRejectedValueOnce(new TypeError("fetch failed signed-access-token"));
+	const offline = await call();
+	expect(offline).toMatchObject({ error: expect.stringContaining("Could not reach") });
+	expect(JSON.stringify(offline)).not.toContain("signed-access-token");
+	fetchMock.mockRejectedValueOnce(new DOMException("timed out", "TimeoutError"));
+	expect(await call()).toMatchObject({ error: expect.stringContaining("too long") });
+	fetchMock.mockResolvedValueOnce(Response.json({ billing: { plan: "enterprise" } }));
+	expect(await call()).toMatchObject({
+		error: expect.stringContaining("could not read the billing response"),
+	});
 });

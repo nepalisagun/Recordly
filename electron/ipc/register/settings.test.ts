@@ -48,16 +48,16 @@ vi.mock("../constants", () => ({
 	SHORTCUTS_FILE: "/unused/shortcuts.json",
 }));
 vi.mock("../settings/recordingPreferencesStore", () => ({
-	createRecordingPreferencesStore: () => ({ read: vi.fn(), update: vi.fn() }),
+	recordingPreferencesStore: { read: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../utils", () => ({ parseJsonWithByteOrderMark: JSON.parse }));
 
-import { registerSettingsHandlers } from "./settings";
 import {
 	hasAppSetting,
 	readAppSettingsStoreWithStatus,
 	writeAppSettingsStore,
 } from "../../appSettingsStore";
+import { registerSettingsHandlers } from "./settings";
 
 describe("custom window controls", () => {
 	const platform = process.platform;

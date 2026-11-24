@@ -80,6 +80,24 @@ describe("Pixi application lifecycle", () => {
 		);
 	});
 
+	it("only returns live draw batches from Pixi's named batchers", async () => {
+		const app = createApplication();
+		const activeBatch = { label: "active" };
+		const alreadyPooledBatch = { label: "already pooled" };
+		const batcher = { batches: [activeBatch, alreadyPooledBatch], batchIndex: 1 };
+		Object.assign(app.renderer, {
+			renderPipes: { batch: { _activeBatches: { __proto__: null, default: batcher } } },
+		});
+		const batchesAtDestroy = vi.fn();
+		vi.mocked(app.destroy).mockImplementation(() => batchesAtDestroy([...batcher.batches]));
+
+		await initializePixiApplication(app, {});
+		destroyPixiApplication(app, "export renderer");
+
+		expect(app.destroy).toHaveBeenCalledOnce();
+		expect(batchesAtDestroy).toHaveBeenCalledWith([activeBatch]);
+	});
+
 	it("defers teardown until an in-flight initialization settles", async () => {
 		let finishInitialization: (() => void) | undefined;
 		const app = createApplication(
@@ -134,5 +152,44 @@ describe("Pixi application lifecycle", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it("guards FilterSystem against skipped root filter stack entries and stale stack depth", async () => {
+		const renderStartListeners: Array<{ renderStart: () => void }> = [];
+		const filterSystem = {
+			_filterStackIndex: 2,
+			_filterStack: [{ skip: true, inputTexture: null }, { skip: false }],
+			_getPreviousFilterData() {
+				return this._filterStack[0];
+			},
+		};
+		const app = {
+			init: vi.fn(async () => undefined),
+			destroy: vi.fn(),
+			stage: { destroy: vi.fn() },
+			renderer: {
+				destroy: vi.fn(),
+				filter: filterSystem,
+				runners: {
+					renderStart: {
+						add: vi.fn((listener: { renderStart: () => void }) => {
+							renderStartListeners.push(listener);
+						}),
+					},
+				},
+			},
+		} as unknown as Application;
+
+		await initializePixiApplication(app, {});
+
+		expect(filterSystem._getPreviousFilterData()).toBeUndefined();
+		filterSystem._filterStack[0] = { skip: false, inputTexture: "active-target" as never };
+		expect(filterSystem._getPreviousFilterData()).toEqual({
+			skip: false,
+			inputTexture: "active-target",
+		});
+
+		renderStartListeners[0]?.renderStart();
+		expect(filterSystem._filterStackIndex).toBe(0);
 	});
 });

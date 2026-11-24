@@ -1,7 +1,15 @@
 import { useTimelineContext } from "dnd-timeline";
-import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type MouseEvent,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { getTimeAtClipSeam } from "../../core/clipPresentation";
-import { ZOOM_ROW_ID } from "../../core/constants";
+import { CAPTION_ROW_ID, ZOOM_ROW_ID } from "../../core/constants";
 import { isAnnotationTrackRowId, isAudioTrackRowId } from "../../core/rows";
 import { useTimelinePresentation } from "../../core/TimelinePresentation";
 import {
@@ -39,11 +47,14 @@ export default function TimelineCanvas({
 	selectedAudioId,
 	selectedCaptionId,
 	selectAllBlocksActive = false,
+	selectedZoomIds,
+	onSelectZoomIds,
 	onClearBlockSelection,
 	keyframes = [],
 	sourceAudioTracks = [],
 	getSourceAudioTrackSettingsForClip,
 	showSourceAudioTrack = false,
+	onTrackCountChange,
 	liveSpanPreviewById,
 	liveHiddenItemIds,
 	isDragging = false,
@@ -52,6 +63,10 @@ export default function TimelineCanvas({
 	const { setTimelineRef, style, sidebarWidth, direction, range, valueToPixels, pixelsToValue } =
 		useTimelineContext();
 	const { clips: clipPresentation } = useTimelinePresentation();
+	const playheadMsRef = useRef(currentTimeMs);
+	useLayoutEffect(() => {
+		playheadMsRef.current = currentTimeMs;
+	}, [currentTimeMs]);
 	const localTimelineRef = useRef<HTMLDivElement | null>(null);
 	const [isSeeking, setIsSeeking] = useState(false);
 	const [autoZoomDismissal, setAutoZoomDismissal] = useState<{
@@ -226,8 +241,12 @@ export default function TimelineCanvas({
 			if (isAudioTrackRowId(item.rowId)) audioRowIds.add(item.rowId);
 		}
 		const sourceAudioRows = showSourceAudioTrack ? sourceAudioTracks.length : 0;
-		return 2 + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
-	}, [items, showSourceAudioTrack, sourceAudioTracks.length]);
+		const captionRows = captionsEnabled || items.some((item) => item.rowId === CAPTION_ROW_ID);
+		return 2 + Number(captionRows) + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
+	}, [items, captionsEnabled, showSourceAudioTrack, sourceAudioTracks.length]);
+	useEffect(() => {
+		onTrackCountChange?.(timelineRowCount);
+	}, [onTrackCountChange, timelineRowCount]);
 	const timelineRowsMinHeightPx = getTimelineRowsMinHeightPx(timelineRowCount);
 	const timelineContentMinHeightPx = getTimelineContentMinHeightPx(timelineRowCount);
 	const sideProperty = direction === "rtl" ? "right" : "left";
@@ -323,7 +342,10 @@ export default function TimelineCanvas({
 					videoPath={videoPath}
 					items={items}
 					videoDurationMs={videoDurationMs}
+					playheadMsRef={playheadMsRef}
 					selectAllBlocksActive={selectAllBlocksActive}
+					selectedZoomIds={selectedZoomIds}
+					onSelectZoomIds={onSelectZoomIds}
 					selectedZoomId={selectedZoomId}
 					selectedClipId={selectedClipId}
 					selectedClipIds={selectedClipIds}

@@ -1,14 +1,16 @@
-import { useI18n as useUiLocale } from "@/contexts/I18nContext";
 import { Card, Modal } from "@heroui/react";
+import { useEffect } from "react";
 import { RecordlyAccountMenu } from "@/components/auth/RecordlyAccountMenu";
 import { UpgradeButton } from "@/components/billing/UpgradeButton";
 import { Button } from "@/components/ui/button";
+import { useI18n as useUiLocale } from "@/contexts/I18nContext";
+import { beginAppOperation, recordAppDiagnostic } from "@/lib/feedback/diagnostics";
 import { AppFrameHeader } from "../layout/AppFrameHeader";
 import { AppUpdateButton } from "../layout/AppUpdateButton";
 import { DashboardAnnouncements } from "./DashboardAnnouncements";
-import { DashboardLibraryActions } from "./DashboardLibraryActions";
 import { DashboardFilters } from "./DashboardFilters";
 import { DashboardGrid } from "./DashboardGrid";
+import { DashboardLibraryActions } from "./DashboardLibraryActions";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { DashboardToolbar } from "./DashboardToolbar";
 import type { DashboardProps } from "./types";
@@ -16,6 +18,16 @@ import { useDashboardModel } from "./useDashboardModel";
 export function Dashboard(props: DashboardProps) {
 	const { t: uiText } = useUiLocale();
 	const model = useDashboardModel(props);
+	const { section } = model;
+	const { open } = props;
+	useEffect(() => {
+		if (!open) return;
+		const kind = /^(projects|raw|shared|settings)$/.test(section) ? section : "folder";
+		recordAppDiagnostic(`Home section shown kind=${kind}`);
+		const operation = beginAppOperation("home.show-section");
+		operation.step(kind);
+		operation.finish("succeeded");
+	}, [open, section]);
 	const view = { ...props, ...model };
 	return (
 		<>
@@ -32,7 +44,7 @@ export function Dashboard(props: DashboardProps) {
 							aria-label={uiText("ui.projectsDashboard")}
 							className="dashboard-surface dashboard-shell flex h-full flex-col gap-0 rounded-none bg-background p-0 text-foreground"
 						>
-							<AppFrameHeader className="loading-content-enter">
+							<AppFrameHeader>
 								<div
 									className={`flex min-w-0 items-center gap-2 ${props.headerLeftControlsPaddingClass ?? ""}`}
 								>
@@ -82,7 +94,7 @@ export function Dashboard(props: DashboardProps) {
 									<AppUpdateButton />
 								</div>
 							</AppFrameHeader>
-							<div className="loading-content-enter flex min-h-0 flex-1">
+							<div className="flex min-h-0 flex-1">
 								<DashboardSidebar {...view} />
 								<Card className="app-frame-surface my-3 mr-3 flex min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-hidden rounded-3xl bg-surface p-0 shadow-sm">
 									{model.section !== "settings" && model.section !== "shared" && (

@@ -1,3 +1,6 @@
+import tahoeClosedHandUrl from "../../../assets/cursors/golden-gate/closedhand.svg";
+import tahoeOpenHandUrl from "../../../assets/cursors/golden-gate/openhand.svg";
+import tahoePointerUrl from "../../../assets/cursors/golden-gate/pointinghand.svg";
 import macosClosedHandUrl from "../../../assets/cursors/macos/closedhand-1__50-50.svg";
 import macosCrosshairUrl from "../../../assets/cursors/macos/crosshair-1__50-50.svg";
 import macosTextUrl from "../../../assets/cursors/macos/ibeamstroke-1__50-50.svg";
@@ -7,13 +10,10 @@ import macosArrowUrl from "../../../assets/cursors/macos/pointer-1__34-24.svg";
 import macosPointerUrl from "../../../assets/cursors/macos/pointinghand-1__39-26.svg";
 import macosResizeEwUrl from "../../../assets/cursors/macos/resizeeastwest-1__50-50.svg";
 import macosResizeNsUrl from "../../../assets/cursors/macos/resizenorthsouth-1__50-50.svg";
-import tahoeClosedHandUrl from "../../../assets/cursors/golden-gate/closedhand.svg";
 import tahoeCrosshairUrl from "../../../assets/cursors/tahoe/crosshair-1__50-50.svg";
 import tahoeTextUrl from "../../../assets/cursors/tahoe/ibeam-1__50-44.svg";
 import tahoeNotAllowedUrl from "../../../assets/cursors/tahoe/notallowed-1__23-0.svg";
-import tahoeOpenHandUrl from "../../../assets/cursors/golden-gate/openhand.svg";
 import tahoeArrowUrl from "../../../assets/cursors/tahoe/pointer-1__14-6.svg";
-import tahoePointerUrl from "../../../assets/cursors/golden-gate/pointinghand.svg";
 import tahoeResizeEwUrl from "../../../assets/cursors/tahoe/resizeeastwest-1__50-50.svg";
 import tahoeResizeNsUrl from "../../../assets/cursors/tahoe/resizenorthsouth-1__50-49.svg";
 import windows11ArrowUrl from "../../../assets/cursors/windows11/arrow__31-22.svg";
@@ -21,7 +21,10 @@ import windows11NotAllowedUrl from "../../../assets/cursors/windows11/block__50-
 import windows11CrosshairUrl from "../../../assets/cursors/windows11/cross__50-50.svg";
 import windows11OpenHandUrl from "../../../assets/cursors/windows11/grab__50-50.svg";
 import windows11ClosedHandUrl from "../../../assets/cursors/windows11/grabbing__50-50.svg";
+import windows11MoveUrl from "../../../assets/cursors/windows11/move__51-51.svg";
 import windows11PointerUrl from "../../../assets/cursors/windows11/pointer__54-35.svg";
+import windows11ResizeNwseUrl from "../../../assets/cursors/windows11/resize-diagonal-backslash__50-50.svg";
+import windows11ResizeNeswUrl from "../../../assets/cursors/windows11/resize-diagonal-slash__50-50.svg";
 import windows11ResizeEwUrl from "../../../assets/cursors/windows11/resize-horizontal__51-49.svg";
 import windows11ResizeNsUrl from "../../../assets/cursors/windows11/resize-vertical__48-50.svg";
 import windows11TextUrl from "../../../assets/cursors/windows11/text__50-50.svg";
@@ -81,7 +84,7 @@ function windowsSystemAsset(url: string, hotspotX: number, hotspotY: number) {
 
 export const cursorSetAssets: Record<
 	Exclude<CursorSetStyle, "tahoe-inverted">,
-	Record<CursorAssetKey, UploadedCursorAsset>
+	Partial<Record<CursorAssetKey, UploadedCursorAsset>> & { arrow: UploadedCursorAsset }
 > = {
 	...communityCursorAssets,
 	"pixel-hand": pixelGloveAssets,
@@ -120,6 +123,9 @@ export const cursorSetAssets: Record<
 		"resize-ew": windowsSystemAsset(windows11ResizeEwUrl, 11, 4),
 		"resize-ns": windowsSystemAsset(windows11ResizeNsUrl, 4, 11),
 		"not-allowed": windowsSystemAsset(windows11NotAllowedUrl, 8, 8),
+		move: windowsSystemAsset(windows11MoveUrl, 11, 11),
+		"resize-nwse": windowsSystemAsset(windows11ResizeNwseUrl, 8, 8),
+		"resize-nesw": windowsSystemAsset(windows11ResizeNeswUrl, 8, 8),
 	},
 };
 

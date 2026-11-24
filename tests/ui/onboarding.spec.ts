@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { completeSupabaseSignIn } from "./auth";
-import { productionTest } from "./production";
 import { installDesktopBridge, installDesktopBridgeOverrides } from "./bridge";
+import { productionTest } from "./production";
 
 async function openDevSettings(page: Page) {
 	await page.getByRole("button", { name: "Recordly account", exact: true }).click();
@@ -83,14 +83,16 @@ test("Show onboarding opens directly after onboarding was completed", async ({ p
 	).toBeVisible();
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	await expect(page.locator("[data-startup-intro]")).toHaveCount(0);
 	await expect(page.locator("html")).toHaveAttribute("data-preview-requested", "true");
 	await expect(page.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
 });
 
-test("settings opens permissions and both pages keep the same layout", async ({ page }) => {
+test("settings opens permissions and all onboarding pages keep the same layout", async ({
+	page,
+}) => {
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	await installDesktopBridge(page);
 	await page.goto("/?windowType=editor");
@@ -104,7 +106,7 @@ test("settings opens permissions and both pages keep the same layout", async ({ 
 	).toBeVisible();
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 	await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
@@ -139,7 +141,6 @@ test("settings opens permissions and both pages keep the same layout", async ({ 
 	const startBounds = (await tour
 		.getByRole("button", { name: "Start recording", exact: true })
 		.boundingBox())!;
-	await expect(tour.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
 	await pages.getByRole("button", { name: "Account", exact: true }).click();
 	await expect(tour).toHaveAttribute("data-onboarding-state", "login");
 	await expect(pages.getByRole("button", { name: "Account", exact: true })).toHaveAttribute(
@@ -194,7 +195,7 @@ test("settings opens permissions and both pages keep the same layout", async ({ 
 	).toBeVisible();
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
 });
@@ -211,19 +212,18 @@ productionTest(
 				return true;
 			};
 		});
-		await page.goto("/?windowType=editor");
+		await page.goto("/?windowType=onboarding");
 		const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 		await expect(tour).toBeVisible({ timeout: 15000 });
 		await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
-		await expect(page.locator("[data-permissions-confetti]")).toBeVisible();
+		await tour.getByRole("button", { name: "Back to account" }).click();
+		await expect(tour.getByRole("button", { name: "Continue as guest" })).toHaveCount(0);
+		await tour.getByRole("button", { name: "Next", exact: true }).click();
 		await tour.getByRole("button", { name: "Start recording", exact: true }).click();
 		await expect
 			.poll(() => page.evaluate(() => localStorage.getItem("recordly.onboarding.v1.seen")))
 			.toBe("true");
-		await page.reload();
-		await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible({
-			timeout: 15000,
-		});
+		await expect(page.locator("html")).toHaveAttribute("data-hud-opened", "true");
 		await expect(tour).not.toBeVisible();
 	},
 );
@@ -243,7 +243,7 @@ test("onboarding fits a compact window with reduced motion", async ({ page }) =>
 	).toBeVisible();
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 	await expect(
@@ -289,7 +289,7 @@ test("short dark windows keep the banner and navigation visible while the accoun
 	).toBeVisible();
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	await page.setViewportSize({ width: 390, height: 600 });
 	await page.evaluate(() => document.documentElement.classList.add("dark"));
@@ -317,12 +317,12 @@ test("short dark windows keep the banner and navigation visible while the accoun
 	await page.screenshot({ path: "test-results/onboarding-narrow-permissions.png" });
 	await tour.getByRole("button", { name: "Back to account" }).click();
 	const bounds = await tour.boundingBox();
-	await expect(tour.getByRole("button", { name: "Continue", exact: true })).toBeInViewport();
+	await expect(tour.getByRole("button", { name: "Next", exact: true })).toBeInViewport();
 	await expect(tour.locator("[data-onboarding-artwork] [data-recordly-demo]")).toBeInViewport();
 	expect(await tour.boundingBox()).toEqual(bounds);
 	await expect(tour).toHaveJSProperty("scrollWidth", bounds!.width);
 	await page.screenshot({ path: "test-results/onboarding-narrow-account.png" });
-	await tour.getByRole("button", { name: "Continue", exact: true }).click();
+	await tour.getByRole("button", { name: "Next", exact: true }).click();
 	await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
 });
 
@@ -345,8 +345,8 @@ productionTest(
 					fontWeight: heading.fontWeight,
 					lineHeight: heading.lineHeight,
 					letterSpacing: heading.letterSpacing,
-					logoWidth: logo.getBoundingClientRect().width,
-					logoHeight: logo.getBoundingClientRect().height,
+					logoWidth: getComputedStyle(logo).width,
+					logoHeight: getComputedStyle(logo).height,
 					headerGap: getComputedStyle(header).gap,
 				};
 			});
@@ -371,12 +371,10 @@ productionTest(
 		await body.evaluate((element) => {
 			element.scrollTop = element.scrollHeight;
 		});
+		await expect(tour.getByRole("status", { name: "Accessibility: Allowed" })).toBeInViewport();
 		await expect(
-			tour.getByText("Microphone and camera access are requested when you use them.", {
-				exact: false,
-			}),
+			tour.getByRole("button", { name: "Start recording", exact: true }),
 		).toBeInViewport();
-		await expect(tour.getByRole("button", { name: "Start recording" })).toBeInViewport();
 		await expect(tour.getByRole("navigation", { name: "Onboarding pages" })).toBeInViewport();
 		const bodyBounds = (await body.boundingBox())!;
 		const footerBounds = (await tour.locator(".onboarding-footer").boundingBox())!;
@@ -385,25 +383,28 @@ productionTest(
 	},
 );
 
-productionTest("sign-in is mandatory even after onboarding was completed", async ({ page }) => {
-	await installDesktopBridge(page, "preview.mp4", { signedIn: false, onboarded: true });
-	await page.addInitScript(() => sessionStorage.setItem("recordly.demo-session", "1"));
-	await page.goto("/?windowType=editor");
-	const tour = page.getByRole("dialog", { name: "Sign in to Recordly", exact: true });
-	await expect(tour).toBeVisible();
-	await expect(tour.getByRole("button", { name: "Continue without signing in" })).toHaveCount(0);
-	await expect(tour.getByText("Optional", { exact: true })).toHaveCount(0);
-	await expect(tour.getByText("Sign in to continue", { exact: true })).toHaveCount(0);
-	const pages = tour.getByRole("navigation", { name: "Onboarding pages" });
-	await expect(pages).toHaveCount(0);
-	await expect(tour.getByRole("button", { name: "Start recording" })).toHaveCount(0);
-	await expect(tour.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
-	await page.keyboard.press("Escape");
-	await page.mouse.click(5, 5);
-	await expect(tour).toBeVisible();
-	await page.reload();
-	await expect(tour).toBeVisible();
-});
+productionTest(
+	"an existing signed-out profile gets the same guest onboarding",
+	async ({ page }) => {
+		await installDesktopBridge(page, "preview.mp4", { signedIn: false, onboarded: true });
+		await page.addInitScript(() => sessionStorage.setItem("recordly.demo-session", "1"));
+		await page.goto("/?windowType=editor");
+		const tour = page.getByRole("dialog", { name: "Welcome to Recordly", exact: true });
+		await expect(tour).toBeVisible({ timeout: 20000 });
+		await expect(tour.getByRole("button", { name: "Continue as guest" })).toBeEnabled();
+		await expect(tour.getByText("Optional", { exact: true })).toHaveCount(0);
+		await expect(tour.getByText("Sign in to continue", { exact: true })).toHaveCount(0);
+		const pages = tour.getByRole("navigation", { name: "Onboarding pages" });
+		await expect(pages).toBeVisible();
+		await expect(tour.getByRole("button", { name: "Start recording" })).toHaveCount(0);
+		await expect(tour.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+		await page.keyboard.press("Escape");
+		await page.mouse.click(5, 5);
+		await expect(tour).toBeVisible();
+		await page.reload();
+		await expect(tour).toBeVisible();
+	},
+);
 
 productionTest(
 	"Supabase email callback advances to permissions only after a session is returned",
@@ -481,15 +482,13 @@ test("missing macOS permissions gate Start recording until access is allowed", a
 			},
 		});
 	});
-	await page.goto("/?windowType=editor");
-	await openDevSettings(page);
-	await page.getByRole("button", { name: "Show onboarding" }).click();
+	await page.goto("/?windowType=onboarding&onboardingPreview=1");
 	await expect(
 		page.getByRole("heading", { name: "Welcome to Recordly", exact: true }),
-	).toBeVisible();
+	).toBeVisible({ timeout: 15000 });
 	await page
 		.getByRole("dialog", { name: "Welcome to Recordly" })
-		.getByRole("button", { name: "Continue", exact: true })
+		.getByRole("button", { name: "Next", exact: true })
 		.click();
 	const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 	const start = tour.getByRole("button", { name: "Start recording", exact: true });
@@ -517,7 +516,8 @@ test("missing macOS permissions gate Start recording until access is allowed", a
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 	await expect(page.locator("[data-permissions-confetti]")).toHaveCount(0);
 	await tour.getByRole("button", { name: "Back to account" }).click();
-	await tour.getByRole("button", { name: "Continue", exact: true }).click();
+	await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toHaveCount(0);
+	await tour.getByRole("button", { name: "Next", exact: true }).click();
 	await expect(page.locator("[data-permissions-confetti]")).toBeVisible();
 	await expect
 		.poll(() =>
@@ -552,23 +552,16 @@ for (const platform of ["win32", "linux"]) {
 			},
 			platform,
 		);
-		await page.goto("/?windowType=editor");
-		await openDevSettings(page);
-		await page.getByRole("button", { name: "Show onboarding" }).click();
+		await page.goto("/?windowType=onboarding&onboardingPreview=1");
 		await expect(
 			page.getByRole("heading", { name: "Welcome to Recordly", exact: true }),
-		).toBeVisible();
-		await page
-			.getByRole("dialog", { name: "Welcome to Recordly" })
-			.getByRole("button", { name: "Continue", exact: true })
-			.click();
+		).toBeVisible({ timeout: 15000 });
 		const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
-		await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
-		await expect(
-			tour.getByRole("button", { name: "Start recording", exact: true }),
-		).toBeEnabled();
+		await expect(tour).toHaveAttribute("data-onboarding-state", "login");
+		await expect(tour.getByRole("button", { name: "Next", exact: true })).toHaveCount(0);
 		await expect(tour.getByText("Screen Recording", { exact: true })).toHaveCount(0);
 		await expect(tour.getByText("macOS System Settings", { exact: false })).toHaveCount(0);
+		await expect(page.locator("html")).not.toHaveAttribute("data-hud-opened");
 		await tour.getByRole("button", { name: "Start recording", exact: true }).click();
 		await expect(tour).not.toBeVisible();
 		await expect(page.locator("html")).toHaveAttribute("data-hud-opened", "true");
@@ -651,28 +644,25 @@ for (const signedIn of [true, false]) {
 				localStorage.setItem(`test-write:${key}`, JSON.stringify(value));
 				return true;
 			};
-			HTMLMediaElement.prototype.play = async function () {
-				if (this instanceof HTMLAudioElement)
-					document.documentElement.dataset.welcomeMusic = this.src;
-			};
-			HTMLMediaElement.prototype.pause = function () {
-				if (this instanceof HTMLAudioElement)
-					document.documentElement.dataset.welcomeMusicStopped = "true";
-			};
 		});
 		await page.goto("/?windowType=onboarding&onboardingPreview=1");
 		const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 		await expect(tour).toHaveAttribute("data-onboarding-state", "login");
 		await expect(tour.getByRole("heading", { name: "Welcome to Recordly" })).toBeVisible();
-		await expect(tour.getByPlaceholder("you@example.com")).toHaveCount(signedIn ? 0 : 1);
-		if (signedIn) await expect(tour.getByText("test@email.com", { exact: true })).toBeVisible();
+		await expect(tour.getByPlaceholder("you@example.com")).toBeVisible();
+		await expect(tour.getByRole("button", { name: "Continue with Google" })).toBeVisible();
 		await expect(tour.getByText("Your account", { exact: true })).toHaveCount(0);
-		await expect(page.locator("html")).toHaveAttribute(
-			"data-welcome-music",
-			/audio\/first-boot.m4a$/,
-		);
-		const music = tour.getByRole("button", { name: "Mute welcome music" });
-		await expect(music).toHaveAttribute("aria-pressed", "true");
+		const music = tour.getByRole("button", { name: "Mute welcome music", exact: true });
+		const pausedMusic = tour.getByRole("button", { name: "Unmute welcome music", exact: true });
+		const audio = tour.locator("audio");
+		const expectPlaying = async () => {
+			await expect(music.or(pausedMusic)).toBeVisible();
+			if (await pausedMusic.isVisible()) await pausedMusic.click();
+			await expect(music).toBeVisible();
+			await expect(audio).toHaveJSProperty("paused", false);
+			await expect(audio).toHaveJSProperty("muted", false);
+		};
+		await expectPlaying();
 		const soundBounds = await music.boundingBox();
 		expect(soundBounds).not.toBeNull();
 		expect(soundBounds!.x).toBeLessThan(64);
@@ -682,15 +672,17 @@ for (const signedIn of [true, false]) {
 			animations: "disabled",
 		});
 		await music.click();
-		const pausedMusic = tour.getByRole("button", { name: "Unmute welcome music" });
 		await expect(pausedMusic).toBeVisible();
-		await expect(pausedMusic).toHaveAttribute("aria-pressed", "false");
-		await expect(page.locator("html")).toHaveAttribute("data-welcome-music-stopped", "true");
+		await expect(audio).toHaveJSProperty("muted", true);
+		await expect(audio).toHaveJSProperty("paused", false);
 		await pausedMusic.click();
-		await expect(music).toHaveAttribute("aria-pressed", "true");
-		await tour.getByRole("button", { name: "Continue", exact: true }).click();
+		await expect(audio).toHaveJSProperty("muted", false);
+		await tour
+			.getByRole("button", { name: signedIn ? "Next" : "Continue as guest", exact: true })
+			.click();
 		await expect(tour).toHaveAttribute("data-onboarding-state", "permissions");
 		await tour.getByRole("button", { name: "Back to account" }).click();
+		await expect(tour.getByPlaceholder("you@example.com")).toBeVisible();
 		await tour
 			.getByRole("navigation")
 			.getByRole("button", { name: "Permissions", exact: true })
@@ -699,7 +691,7 @@ for (const signedIn of [true, false]) {
 		await tour.getByRole("button", { name: "Start recording", exact: true }).click();
 		await expect(page.locator("html")).toHaveAttribute("data-hud-opened", "true");
 		await expect(page.locator("html")).toHaveAttribute("data-onboarding-closed", "true");
-		await expect(page.locator("html")).toHaveAttribute("data-welcome-music-stopped", "true");
+		await expect(tour.locator("[data-welcome-music]")).toHaveCount(0);
 		expect(
 			await page.evaluate(() =>
 				localStorage.getItem("test-write:recordly.onboarding.v1.seen"),
@@ -712,7 +704,7 @@ for (const signedIn of [true, false]) {
 		).toBeNull();
 		await page.reload();
 		await expect(tour.getByRole("heading", { name: "Welcome to Recordly" })).toBeVisible();
-		await expect(tour.getByRole("button", { name: "Mute welcome music" })).toBeVisible();
+		await expectPlaying();
 	});
 }
 
@@ -737,9 +729,8 @@ test("Review permission setup uses onboarding preview in development", async ({ 
 	await page.getByRole("button", { name: "Review permission setup", exact: true }).click();
 	await expect(page.locator("html")).toHaveAttribute("data-preview-requested", "true");
 	const tour = page.getByRole("dialog", { name: "Welcome to Recordly", exact: true });
-	await expect(tour.getByPlaceholder("you@example.com")).toHaveCount(0);
-	await expect(tour.getByText("test@email.com", { exact: true })).toBeVisible();
-	await tour.getByRole("button", { name: "Continue", exact: true }).click();
+	await expect(tour.getByPlaceholder("you@example.com")).toBeVisible();
+	await tour.getByRole("button", { name: "Next", exact: true }).click();
 	await expect(tour.getByRole("navigation")).toBeVisible();
 	await expect(tour.getByRole("button", { name: "Back to account" })).toBeVisible();
 	await expect(tour.getByRole("heading", { name: "Allow Recordly to record" })).toBeVisible();
@@ -780,3 +771,23 @@ test("welcome mark and video blend into floating blue blobs regardless of reduce
 		.toBeGreaterThan(8);
 	await page.screenshot({ path: test.info().outputPath("welcome-pulse-preview.png") });
 });
+
+for (const platform of ["win32", "linux"]) {
+	test(`${platform} onboarding skips the permissions page`, async ({ page }) => {
+		await installDesktopBridge(page, "preview.mp4", { signedIn: true, onboarded: true });
+		await page.addInitScript((platform) => {
+			window.electronAPI.getPlatform = async () => platform;
+		}, platform);
+		await page.goto("/?windowType=onboarding&onboardingPreview=1");
+		const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
+		const pages = tour.getByRole("navigation", { name: "Onboarding pages" });
+		await expect(pages.getByRole("button", { name: "Permissions", exact: true })).toHaveCount(
+			0,
+		);
+		await expect(pages.getByRole("button")).toHaveCount(1);
+		await expect(tour).toHaveAttribute("data-onboarding-state", "login");
+		await expect(tour.getByRole("button", { name: "Next", exact: true })).toHaveCount(0);
+		await tour.getByRole("button", { name: "Start recording", exact: true }).click();
+		await expect(page.locator("html")).toHaveAttribute("data-hud-opened", "true");
+	});
+}

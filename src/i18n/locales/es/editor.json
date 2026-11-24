@@ -65,7 +65,7 @@
 		"copyLink": "Copiar enlace",
 		"shareLink": "Compartir enlace",
 		"saveLinkFailed": "Se creó el recurso compartido, pero no se pudo guardar su enlace localmente",
-		"verifyPlanFailed": "No se pudo verificar tu plan de la nube.",
+		"verifyPlanFailed": "No se pudo verificar tu plan.",
 		"refreshPlan": "Actualizar plan",
 		"share": "Compartir",
 		"signInToShare": "Inicia sesión para compartir",
@@ -84,6 +84,8 @@
 		"videos": "Vídeos"
 	},
 	"playback": {
+		"resolution": "Resolución de reproducción",
+		"fullResolution": "Completa",
 		"play": "Reproducir",
 		"pause": "Pausar",
 		"skipBack": "Retroceder",
@@ -243,6 +245,7 @@
 		"savingGif": "Guardando GIF…",
 		"encodingGif": "Finalizando GIF…",
 		"errorCopied": "Error copiado",
+		"nvidiaCudaFallback": "La exportación con NVIDIA CUDA falló. Recordly está probando otra forma de exportar.",
 		"errorCopyFailed": "No se pudo copiar. Selecciona el texto del error y cópialo manualmente.",
 		"copyError": "Copiar error"
 	},
@@ -250,8 +253,10 @@
 		"processingAudioEdits": "Procesando audio con ediciones de velocidad/superposición"
 	},
 	"toolbar": {
-		"addLayer": "Agregar capa",
-		"splitClip": "Dividir clip (C)"
+		"addLayer": "Agregar",
+		"splitClip": "Dividir clip (C)",
+		"trimStart": "Recortar el inicio hasta el cabezal ({{shortcut}})",
+		"trimEnd": "Recortar el final desde el cabezal ({{shortcut}})"
 	},
 	"timeline": {
 		"expand": "Expandir línea de tiempo",

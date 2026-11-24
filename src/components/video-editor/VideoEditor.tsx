@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/correctness/useExhaustiveDependencies: setters returned by the editor's domain-state hooks are stable React dispatchers. */
-import { BillingProvider } from "@/components/billing/BillingProvider";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BillingProvider } from "@/components/billing/BillingProvider";
 import { useI18n } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { getAspectRatioValue } from "@/utils/aspectRatioUtils";
@@ -60,6 +61,7 @@ function VideoEditorContent() {
 		sessionShowCursorOverride,
 		setSessionShowCursorOverride,
 		sessionNativeCaptureUnavailable,
+		sessionCaptureSourceKind,
 		setNativeCaptureUnavailableModalOpen,
 		whisperExecutablePath,
 		setWhisperExecutablePath,
@@ -212,6 +214,7 @@ function VideoEditorContent() {
 		appearance,
 		timeline,
 		initialPreferences: initialEditorPreferences,
+		captureSourceKind: sessionCaptureSourceKind,
 		smokeConfig: smokeExportConfig,
 		devConfig: devOpenRecordingConfig,
 		aspectRatio,
@@ -308,7 +311,6 @@ function VideoEditorContent() {
 		videoPath,
 		videoSourcePath,
 		videoPlaybackRef,
-		isPlaying,
 		duration,
 		error,
 		loading,
@@ -365,6 +367,7 @@ function VideoEditorContent() {
 		whisperModelDownloadProgress,
 		isGeneratingCaptions,
 		sessionNativeCaptureUnavailable,
+		sessionCaptureSourceKind,
 		setNativeCaptureUnavailableModalOpen,
 		handleUploadWebcam,
 		handleClearWebcam,

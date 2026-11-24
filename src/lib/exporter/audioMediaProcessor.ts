@@ -1,6 +1,6 @@
 import { WebDemuxer } from "web-demuxer";
-import { AudioTimelineProcessor } from "./audioTimelineProcessor";
 import { DECODE_BACKPRESSURE_LIMIT, OFFLINE_AUDIO_SAMPLE_RATE } from "./audioProcessorShared";
+import { AudioTimelineProcessor } from "./audioTimelineProcessor";
 import { resolveMediaElementSource } from "./localMediaSource";
 
 export class AudioMediaProcessor extends AudioTimelineProcessor {
@@ -117,6 +117,7 @@ export class AudioMediaProcessor extends AudioTimelineProcessor {
 				},
 			});
 
+			decoder.ondequeue = notifyDecodeCapacityAvailable;
 			decoder.configure(audioConfig);
 
 			const audioStream = demuxer.read("audio");
@@ -141,6 +142,7 @@ export class AudioMediaProcessor extends AudioTimelineProcessor {
 				}
 				if (decodeError) throw decodeError;
 			} finally {
+				decoder.ondequeue = null;
 				notifyDecodeCapacityAvailable();
 				try {
 					await reader.cancel();

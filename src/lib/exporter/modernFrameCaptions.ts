@@ -1,20 +1,21 @@
-import { drawSquircleOnCanvas, SQUIRCLE_RADIUS_SCALE } from "@/lib/geometry/squircle";
+import { Sprite, Texture } from "pixi.js";
 import { getCaptionFontFamily } from "@/components/video-editor/captionFonts";
+import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
 	drawCaptionBoxBorder,
 	getCaptionBackground,
 	getCaptionPreset,
 } from "@/components/video-editor/captionPresets";
-import { drawCaptionLine } from "./captionText";
-import { Sprite, Texture } from "pixi.js";
-import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
 	CAPTION_LINE_HEIGHT,
+	getCaptionBoxCenter,
 	getCaptionPadding,
 	getCaptionScaledFontSize,
 	getCaptionScaledRadius,
 	getCaptionTextMaxWidth,
 } from "@/components/video-editor/captionStyle";
+import { drawSquircleOnCanvas, SQUIRCLE_RADIUS_SCALE } from "@/lib/geometry/squircle";
+import { drawCaptionLine } from "./captionText";
 import type { FrameRenderContext } from "./modernFrameRenderer";
 import type { CaptionRenderState, MutableVideoTextureSource } from "./modernFrameTypes";
 import { configureHighQuality2DContext } from "./modernFrameUtils";
@@ -115,11 +116,14 @@ export class FrameCaptions {
 			this.context.config.width * (settings.maxWidth / 100) + padding.x * 2,
 			maxMeasuredWidth + padding.x * 2,
 		);
-		const centerX = this.context.config.width / 2;
-		const centerY =
-			this.context.config.height -
-			(this.context.config.height * settings.bottomOffset) / 100 -
-			boxHeight / 2;
+		const { centerX, centerY } = getCaptionBoxCenter({
+			width: this.context.config.width,
+			height: this.context.config.height,
+			boxWidth,
+			boxHeight,
+			horizontalPosition: settings.horizontalPosition,
+			bottomOffset: settings.bottomOffset,
+		});
 
 		return {
 			key: `${layout.blockKey}:${layout.visiblePageIndex}:${layout.activeWordIndex}:${layout.visibleLines.flatMap((line) => line.words.map((word) => word.revealProgress?.toFixed(4) ?? "")).join(",")}`,

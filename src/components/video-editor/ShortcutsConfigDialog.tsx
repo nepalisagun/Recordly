@@ -1,9 +1,9 @@
-import { Kbd, Description } from "@heroui/react";
-import { Keyboard, ArrowCounterClockwise as RotateCcw } from "@/components/ui/icons";
+import { Description, Kbd } from "@heroui/react";
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Keyboard, ArrowCounterClockwise as RotateCcw } from "@/components/ui/icons";
+import { toast } from "@/components/ui/toast";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import {
 	DEFAULT_SHORTCUTS,
@@ -31,6 +31,7 @@ export function ShortcutsConfigDialog({
 	const t = useScopedT("dialogs");
 	const ts = useScopedT("shortcuts");
 	const te = useScopedT("editing");
+	const tSettings = useScopedT("settings");
 	const actionLabel = (action: keyof typeof SHORTCUT_LABELS) =>
 		action === "splitClip"
 			? te("splitClip", "Split Clip")
@@ -42,16 +43,19 @@ export function ShortcutsConfigDialog({
 
 	const fixedLabel = useCallback(
 		(label: string) => {
+			if (label === "Clear All Zooms") return tSettings("zoom.clearAllZooms", label);
 			const key = {
 				"Cycle Annotations Forward": "cycleForward",
 				"Cycle Annotations Backward": "cycleBackward",
 				"Delete Selected (alt)": "deleteSelectedAlt",
+				"Copy Selected": "copySelected",
+				Paste: "paste",
 				"Pan Timeline": "panTimeline",
 				"Zoom Timeline": "zoomTimeline",
 			}[label];
 			return key ? ts(`actions.${key}`, label) : label;
 		},
-		[ts],
+		[tSettings, ts],
 	);
 
 	const { shortcuts, isMac, isConfigOpen, closeConfig, setShortcuts, persistShortcuts } =
@@ -275,14 +279,19 @@ export function ShortcutsConfigDialog({
 					<p className="mb-3 text-[13px] font-medium text-foreground">
 						{t("shortcutsConfig.fixed")}
 					</p>
-					{FIXED_SHORTCUTS.map(({ label, display }) => (
+					{FIXED_SHORTCUTS.map(({ label, display, bindings }) => (
 						<div
 							key={label}
 							className="flex flex-wrap items-center justify-between gap-4 border-b border-separator py-3 last:border-0"
 						>
 							<span className="text-[13px] text-foreground">{fixedLabel(label)}</span>
 							<Kbd className="min-w-[90px] justify-center">
-								{bindingLabel(display)}
+								{bindingLabel(
+									display ??
+										bindings
+											.map((binding) => formatBinding(binding, isMac))
+											.join(" / "),
+								)}
 							</Kbd>
 						</div>
 					))}

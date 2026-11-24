@@ -1,4 +1,3 @@
-import { DEFAULT_CURSOR_IDLE_HIDE } from "../videoPlayback/cursorIdleVisibility";
 import { getDefaultBorderRadiusPercent } from "@/components/video-editor/projectPersistence";
 import {
 	DEFAULT_AUTO_CAPTION_SETTINGS,
@@ -16,6 +15,7 @@ import {
 	DEFAULT_ZOOM_IN_DURATION_MS,
 	DEFAULT_ZOOM_OUT_DURATION_MS,
 } from "@/components/video-editor/types";
+import { DEFAULT_CURSOR_IDLE_HIDE } from "../videoPlayback/cursorIdleVisibility";
 
 import type { SettingsPanelProps } from "./settingsPanelProps";
 
@@ -33,6 +33,7 @@ const defaults = {
 	zoomOutDurationMs: () => DEFAULT_ZOOM_OUT_DURATION_MS,
 	showCursor: () => false,
 	loopCursor: () => false,
+	alwaysUsePointerCursor: () => false,
 	cursorStyle: () => DEFAULT_CURSOR_STYLE,
 	cursorSize: () => 5,
 	cursorSmoothing: () => 2,
@@ -57,6 +58,7 @@ const defaults = {
 	webcamPreviewCurrentTime: () => 0,
 	webcamPreviewPlaying: () => false,
 	padding: () => DEFAULT_PADDING,
+	defaultPadding: () => DEFAULT_PADDING,
 	annotationRegions: () => [],
 	autoCaptions: () => [],
 	autoCaptionSettings: () => DEFAULT_AUTO_CAPTION_SETTINGS,

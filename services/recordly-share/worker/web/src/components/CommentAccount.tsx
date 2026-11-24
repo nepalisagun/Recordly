@@ -1,12 +1,12 @@
 import { Button, Input, Label, Modal, Spinner, TextField } from "@heroui/react";
 import { useEffect, useState } from "react";
 import {
+	type CommentAccountState,
+	type CommentUser,
 	createCommentAccount,
 	fetchCommentUser,
 	signInForComments,
 	signOutFromComments,
-	type CommentAccountState,
-	type CommentUser,
 } from "../scripts/api";
 import CloudLibrary from "./CloudLibrary";
 import { Notice } from "./ShareUI";
@@ -63,7 +63,7 @@ export default function CommentAccount(props: Props) {
 	return <LocalCommentAccount {...props} />;
 }
 
-// Self-hosted instances keep their existing local accounts separate from Recordly Cloud.
+// Self-hosted instances keep their existing local accounts separate from Recordly’s hosted service.
 function LocalCommentAccount({ onChange, reauthenticate, canComment }: Props) {
 	const [user, setUser] = useState<CommentUser | null>(null);
 	const [loading, setLoading] = useState(true);

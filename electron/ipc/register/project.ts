@@ -1,21 +1,3 @@
-import { nativeT } from "../../nativeI18n";
-import { relinkProjectRecording } from "../project/relinkRecording";
-import { persistRecentMetadata } from "../project/recentMetadata";
-import { renameLibraryProject } from "../project/renameLibraryProject";
-import { createUntitledProject } from "../project/createUntitledProject";
-import { trashLibraryProjects } from "../project/trashProjects";
-import {
-	prepareLibraryDeletion,
-	protectedLibrarySources,
-	recordingUsesSources,
-	removableLibrarySources,
-} from "../project/libraryDeletion";
-import { canonicalMediaSources } from "../project/canonicalMediaSources";
-import { getRecordingThumbnail } from "../recording/thumbnail";
-import { discardRecordingFiles } from "../recording/discardFiles";
-import { findDuplicateRecordingSources } from "../recording/duplicateSources";
-import { listRecordings, setRecordingsRemoved, trashRecordingSources } from "../recording/library";
-import { importRecording, discardRecordingImport } from "../recording/importRecording";
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
@@ -23,22 +5,31 @@ import path from "node:path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { RECORDINGS_DIR } from "../../appPaths";
 import { buildMediaUrl, getMediaServerBaseUrl } from "../../mediaServer";
+import { nativeT } from "../../nativeI18n";
 import { isTrustedRenderer } from "../../trustedRenderer";
 import { LEGACY_PROJECT_FILE_EXTENSIONS, PROJECT_FILE_EXTENSION } from "../constants";
 import { getProjectBackupPaths, writeProjectFileAtomically } from "../project/atomicSave";
+import { canonicalMediaSources } from "../project/canonicalMediaSources";
+import { createUntitledProject } from "../project/createUntitledProject";
+import {
+	prepareLibraryDeletion,
+	protectedLibrarySources,
+	recordingUsesSources,
+	removableLibrarySources,
+} from "../project/libraryDeletion";
 import {
 	cacheProjectThumbnail,
 	getProjectsDir,
 	getProjectThumbnailPath,
 	getProjectThumbnailPaths,
+	isLoadableProjectData,
 	isPathInsideDirectory,
 	isTrustedProjectPath,
 	listProjectLibraryEntries,
-	isLoadableProjectData,
 	loadProjectFromPath,
-	readProjectPreview,
 	loadRecentProjectPaths,
 	persistRecordingsDirectorySetting,
+	readProjectPreview,
 	rememberApprovedLocalReadPath,
 	rememberRecentProject,
 	replaceApprovedSessionLocalReadPaths,
@@ -46,27 +37,37 @@ import {
 	saveProjectThumbnail,
 	saveRecentProjectPaths,
 } from "../project/manager";
+import { persistRecentMetadata } from "../project/recentMetadata";
+import { relinkProjectRecording } from "../project/relinkRecording";
+import { renameLibraryProject } from "../project/renameLibraryProject";
 import { persistRecordingSessionManifest, resolveRecordingSession } from "../project/session";
+import { trashLibraryProjects } from "../project/trashProjects";
+import { discardRecordingFiles } from "../recording/discardFiles";
+import { findDuplicateRecordingSources } from "../recording/duplicateSources";
+import { discardRecordingImport, importRecording } from "../recording/importRecording";
+import { listRecordings, setRecordingsRemoved, trashRecordingSources } from "../recording/library";
+import { getRecordingThumbnail } from "../recording/thumbnail";
 import {
-	currentProjectPath,
 	currentProjectContextVersion,
+	currentProjectPath,
 	currentRecordingSession,
 	currentVideoPath,
-	nativeScreenRecordingActive,
-	windowsNativeCaptureActive,
 	ffmpegScreenRecordingActive,
+	nativeScreenRecordingActive,
 	setCurrentProjectPath,
 	setCurrentRecordingSession,
 	setCurrentVideoPath,
-	windowsPendingVideoPath,
 	setWindowsPendingVideoPath,
+	windowsNativeCaptureActive,
+	windowsPendingVideoPath,
 } from "../state";
+import type { RecordingSessionData } from "../types";
 import {
 	approveUserPath,
 	getRecordingsDir,
 	isAutoRecordingPath,
-	normalizeVideoSourcePath,
 	normalizePath,
+	normalizeVideoSourcePath,
 	parseJsonWithByteOrderMark,
 } from "../utils";
 
@@ -96,7 +97,7 @@ function libraryDeletionDependencies(protectedSources: unknown = []) {
 			]
 				.map((file) => normalizeVideoSourcePath(file))
 				.filter((file): file is string => Boolean(file)),
-		readSources: async (file: string, kind: "primary" | "recovery" = "recovery") => {
+		readSources: async (file: string, kind: "primary" | "recovery", projectPath: string) => {
 			try {
 				// Listed primaries may be leaf symlinks; recovery generations remain strict.
 				const stat = kind === "primary" ? await fs.stat(file) : await fs.lstat(file);
@@ -104,7 +105,7 @@ function libraryDeletionDependencies(protectedSources: unknown = []) {
 				const project = parseJsonWithByteOrderMark(await fs.readFile(file, "utf-8"));
 				if (!isLoadableProjectData(project))
 					throw new Error("Project reference could not be read");
-				return canonicalMediaSources(project, { preserveMissing: true });
+				return canonicalMediaSources(project, { preserveMissing: true, projectPath });
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 				throw error;
@@ -115,6 +116,10 @@ function libraryDeletionDependencies(protectedSources: unknown = []) {
 
 function normalizeRecordingTimeOffsetMs(value: unknown): number {
 	return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
+}
+
+function normalizeCaptureSourceKind(value: unknown): RecordingSessionData["captureSourceKind"] {
+	return value === "screen" || value === "window" ? value : undefined;
 }
 
 function normalizeBoolean(value: unknown, fallback = false): boolean {
@@ -1095,7 +1100,11 @@ export function registerProjectHandlers() {
 		async (
 			_,
 			path: string,
-			options?: { preserveProjectPath?: boolean; hideOverlayCursorByDefault?: boolean },
+			options?: {
+				preserveProjectPath?: boolean;
+				hideOverlayCursorByDefault?: boolean;
+				captureSourceKind?: RecordingSessionData["captureSourceKind"];
+			},
 		) => {
 			setCurrentVideoPath(normalizeVideoSourcePath(path) ?? path);
 			approveUserPath(currentVideoPath);
@@ -1110,6 +1119,9 @@ export function registerProjectHandlers() {
 				hideOverlayCursorByDefault:
 					normalizeBoolean(options?.hideOverlayCursorByDefault) ||
 					normalizeBoolean(resolvedSession.hideOverlayCursorByDefault),
+				captureSourceKind:
+					normalizeCaptureSourceKind(options?.captureSourceKind) ??
+					resolvedSession.captureSourceKind,
 			};
 
 			setCurrentRecordingSession(nextSession);
@@ -1124,7 +1136,10 @@ export function registerProjectHandlers() {
 				]);
 			}
 
-			if (nextSession.webcamPath) {
+			if (
+				nextSession.webcamPath ||
+				nextSession.captureSourceKind !== resolvedSession.captureSourceKind
+			) {
 				await persistRecordingSessionManifest(nextSession);
 			}
 
@@ -1151,17 +1166,25 @@ export function registerProjectHandlers() {
 				webcamPath?: string | null;
 				timeOffsetMs?: number;
 				hideOverlayCursorByDefault?: boolean;
+				captureSourceKind?: RecordingSessionData["captureSourceKind"];
 			},
 			options?: { preserveProjectPath?: boolean },
 		) => {
 			const normalizedVideoPath =
 				normalizeVideoSourcePath(session.videoPath) ?? session.videoPath;
+			const previousCaptureSourceKind =
+				currentRecordingSession?.videoPath === normalizedVideoPath
+					? currentRecordingSession.captureSourceKind
+					: undefined;
 			setCurrentVideoPath(normalizedVideoPath);
 			setCurrentRecordingSession({
 				videoPath: normalizedVideoPath,
 				webcamPath: normalizeVideoSourcePath(session.webcamPath ?? null),
 				timeOffsetMs: normalizeRecordingTimeOffsetMs(session.timeOffsetMs),
 				hideOverlayCursorByDefault: normalizeBoolean(session.hideOverlayCursorByDefault),
+				captureSourceKind:
+					normalizeCaptureSourceKind(session.captureSourceKind) ??
+					previousCaptureSourceKind,
 			});
 			await rememberApprovedLocalReadPath(currentRecordingSession!.videoPath);
 			await rememberApprovedLocalReadPath(currentRecordingSession!.webcamPath);

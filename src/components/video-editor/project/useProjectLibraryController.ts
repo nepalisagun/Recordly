@@ -1,10 +1,11 @@
 /* biome-ignore-all lint/correctness/useExhaustiveDependencies: grouped editor domain objects contain the thumbnail renderer dependencies. */
 import { type RefObject, useCallback, useEffect, useRef } from "react";
+import { FrameRenderer } from "@/lib/exporter/frameRenderer";
+import { beginAppOperation, recordAppDiagnostic } from "@/lib/feedback/diagnostics";
 import {
 	captureProjectThumbnailCanvas,
 	getProjectThumbnailRenderSize,
 } from "@/lib/projectThumbnailCanvas";
-import { FrameRenderer } from "@/lib/exporter/frameRenderer";
 import { toFileUrl } from "../projectPersistence";
 import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useProjectState } from "../state/useProjectState";
@@ -12,6 +13,7 @@ import type { useTimelineState } from "../state/useTimelineState";
 import { getClipSourceEndMs, getClipSourceStartMs, type SpeedRegion } from "../types";
 import type { VideoPlaybackRef } from "../VideoPlayback";
 import { findPreviewClipAtTimelineTime } from "../videoPlayback/clipPlayback";
+import { applyDefaultCursorShape } from "../videoPlayback/cursorShapeOverride";
 
 type Input = {
 	project: ReturnType<typeof useProjectState>;
@@ -58,6 +60,7 @@ export function useProjectLibraryController({
 		cursorStyle,
 		cursorSway,
 		cursorIdleHide,
+		alwaysUsePointerCursor,
 		padding,
 		resolvedWebcamVideoUrl,
 		shadowIntensity,
@@ -84,14 +87,19 @@ export function useProjectLibraryController({
 	const thumbnailUpdates = useRef(
 		new Map<string, { thumbnailPath: string; updatedAt: number }>(),
 	);
-	const refreshProjectLibrary = useCallback(async () => {
+	const refreshProjectLibrary = useCallback(async (parentOperationId?: string) => {
+		const operation = beginAppOperation("project.library-load", parentOperationId);
+		const started = performance.now();
+		recordAppDiagnostic("project library load started");
 		setProjectLibraryLoading(true);
 		try {
+			operation.step("list-files");
 			const result = await window.electronAPI.listProjectFiles();
 			if (!result.success) {
 				throw new Error(result.error || "Failed to load project library");
 			}
 
+			operation.step("apply-entries");
 			setProjectLibraryEntries(
 				result.entries.map((entry) => {
 					const ready = thumbnailUpdates.current.get(entry.path);
@@ -105,8 +113,17 @@ export function useProjectLibraryController({
 				if (!paths.has(key)) thumbnailUpdates.current.delete(key);
 			}
 			setProjectLibraryError(null);
+			operation.finish("succeeded");
+			recordAppDiagnostic(
+				`project library loaded count=${result.entries.length} elapsedMs=${Math.round(performance.now() - started)}`,
+			);
 		} catch (projectLibraryError) {
+			operation.finish("failed");
 			console.warn("Unable to refresh project library:", projectLibraryError);
+			recordAppDiagnostic(
+				`project library load failed elapsedMs=${Math.round(performance.now() - started)}`,
+				projectLibraryError,
+			);
 			setProjectLibraryError(
 				projectLibraryError instanceof Error
 					? projectLibraryError.message
@@ -231,7 +248,10 @@ export function useProjectLibraryController({
 					})(),
 					previewWidth,
 					previewHeight,
-					cursorTelemetry,
+					cursorTelemetry: applyDefaultCursorShape(
+						cursorTelemetry,
+						alwaysUsePointerCursor,
+					),
 					showCursor: effectiveShowCursor,
 					cursorStyle,
 					cursorSize,
@@ -313,6 +333,7 @@ export function useProjectLibraryController({
 		cursorStyle,
 		cursorSway,
 		cursorIdleHide,
+		alwaysUsePointerCursor,
 		cursorTelemetry,
 		clipRegions,
 		padding,

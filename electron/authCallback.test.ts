@@ -1,11 +1,13 @@
 import { app, ipcMain } from "electron";
 import { expect, it, vi } from "vitest";
+import { testAppDocument, testAppPath } from "./testing/rendererFixture";
 
 const state = vi.hoisted(() => ({
 	request: undefined as ((request: unknown, response: unknown) => void) | undefined,
 	send: vi.fn(),
 	foreignSend: vi.fn(),
 	relayRoute: vi.fn(),
+	servers: [] as Array<{ on: ReturnType<typeof vi.fn>; listen: ReturnType<typeof vi.fn> }>,
 }));
 vi.mock("./authFlowRelay", () => ({
 	createAuthFlowRelay: () => ({ route: state.relayRoute, close: async () => undefined }),
@@ -13,15 +15,17 @@ vi.mock("./authFlowRelay", () => ({
 vi.mock("node:http", () => ({
 	createServer: (handler: (request: unknown, response: unknown) => void) => {
 		state.request = handler;
-		return { on: vi.fn(), listen: vi.fn(), close: vi.fn() };
+		const server = { on: vi.fn(), listen: vi.fn(), close: vi.fn() };
+		state.servers.push(server);
+		return server;
 	},
 }));
 vi.mock("electron", () => ({
 	app: {
 		on: vi.fn(),
 		isReady: () => false,
-		getAppPath: () => "/recordly",
-		getPath: () => "/recordly",
+		getAppPath: () => testAppPath,
+		getPath: () => testAppPath,
 	},
 	ipcMain: { handle: vi.fn() },
 	BrowserWindow: {
@@ -32,7 +36,7 @@ vi.mock("electron", () => ({
 			},
 			{
 				isDestroyed: () => false,
-				webContents: { send: state.send, getURL: () => "file:///recordly/dist/index.html" },
+				webContents: { send: state.send, getURL: () => testAppDocument },
 			},
 		],
 	},
@@ -64,6 +68,89 @@ it("forwards the SDK's PKCE flow id through the dev callback without forwarding 
 	controller.close();
 });
 
+it("serves the loopback return page in packaged Windows/Linux builds only when enabled", async () => {
+	const { createAuthCallbackController } = await import("./authCallback");
+	state.request = undefined;
+	const off = createAuthCallbackController({
+		isDev: false,
+		focusApp: vi.fn(),
+		flowRoutingEnabled: false,
+	});
+	off.startDevServer();
+	expect(state.request).toBeUndefined();
+	off.close();
+
+	state.send.mockClear();
+	const on = createAuthCallbackController({
+		isDev: false,
+		focusApp: vi.fn(),
+		flowRoutingEnabled: false,
+		loopbackReturn: true,
+	});
+	on.startDevServer();
+	const response = { writeHead: vi.fn(), end: vi.fn() };
+	state.request!(
+		{ method: "GET", headers: { host: "127.0.0.1:43821" }, url: "/auth/callback?code=c1" },
+		response,
+	);
+	expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+	expect(String(response.end.mock.calls[0][0])).toContain('href="recordly://app/open"');
+	on.close();
+});
+
+it("answers malformed loopback targets with 404 instead of throwing", async () => {
+	const { createAuthCallbackController } = await import("./authCallback");
+	const controller = createAuthCallbackController({
+		isDev: false,
+		focusApp: vi.fn(),
+		flowRoutingEnabled: false,
+		loopbackReturn: true,
+	});
+	controller.startDevServer();
+	for (const url of ["//[", "//user@[::1"]) {
+		const response = { writeHead: vi.fn(), end: vi.fn() };
+		expect(() =>
+			state.request!({ method: "GET", headers: { host: "127.0.0.1:43821" }, url }, response),
+		).not.toThrow();
+		expect(response.writeHead).toHaveBeenCalledWith(404, expect.any(Object));
+	}
+	controller.close();
+});
+
+it("retries the loopback port while another instance holds it, until closed", async () => {
+	vi.useFakeTimers();
+	try {
+		const { createAuthCallbackController } = await import("./authCallback");
+		const controller = createAuthCallbackController({
+			isDev: false,
+			focusApp: vi.fn(),
+			flowRoutingEnabled: false,
+			loopbackReturn: true,
+		});
+		state.servers.length = 0;
+		controller.startDevServer();
+		const busy = Object.assign(new Error("in use"), { code: "EADDRINUSE" });
+		const fail = (server: (typeof state.servers)[number]) => {
+			const onError = server.on.mock.calls.find(([event]) => event === "error")?.[1];
+			if (typeof onError !== "function") throw new Error("No error handler registered");
+			(onError as (error: Error) => void)(busy);
+		};
+
+		fail(state.servers[0]);
+		expect(state.servers).toHaveLength(1);
+		vi.advanceTimersByTime(5000);
+		expect(state.servers).toHaveLength(2);
+		expect(state.servers[1].listen).toHaveBeenCalledWith(43821, "127.0.0.1");
+
+		fail(state.servers[1]);
+		controller.close();
+		vi.advanceTimersByTime(10_000);
+		expect(state.servers).toHaveLength(2);
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 it("restricts callback reads and acknowledgements to the trusted main frame", async () => {
 	vi.mocked(ipcMain.handle).mockClear();
 	const { createAuthCallbackController } = await import("./authCallback");
@@ -75,7 +162,7 @@ it("restricts callback reads and acknowledgements to the trusted main frame", as
 	const url = "recordly://auth/callback?code=private-code";
 	controller.dispatch(url);
 	const handlers = new Map(vi.mocked(ipcMain.handle).mock.calls);
-	const frame = { url: "file:///recordly/dist/index.html?windowType=onboarding" };
+	const frame = { url: `${testAppDocument}?windowType=onboarding` };
 	const sender = { mainFrame: frame };
 	const trusted = { sender, senderFrame: frame } as unknown as Electron.IpcMainInvokeEvent;
 	for (const foreign of [false, true]) {
@@ -137,7 +224,7 @@ it("reopens the app without replacing its pending sign-in callback", async () =>
 	expect(focusApp).toHaveBeenCalledOnce();
 	expect(state.send).not.toHaveBeenCalled();
 	const read = new Map(vi.mocked(ipcMain.handle).mock.calls).get("auth:get-pending-callback")!;
-	const frame = { url: "file:///recordly/dist/index.html" };
+	const frame = { url: testAppDocument };
 	expect(
 		read({
 			sender: { mainFrame: frame },

@@ -45,6 +45,7 @@ type Props = {
 	canUndo: boolean;
 	canRedo: boolean;
 	handleOpenProjectBrowser: () => void;
+	handleOpenRecordingHud: () => Promise<void>;
 	handleUndo: () => void;
 	handleRedo: () => void;
 	handleProjectNameSubmit: (event?: FormEvent<HTMLFormElement>) => void;
@@ -84,6 +85,7 @@ export function EditorHeader(props: Props) {
 		canUndo,
 		canRedo,
 		handleOpenProjectBrowser,
+		handleOpenRecordingHud,
 		handleUndo,
 		handleRedo,
 		handleProjectNameSubmit,
@@ -121,6 +123,10 @@ export function EditorHeader(props: Props) {
 			renameButtonRef.current?.focus();
 		}
 	}, [isEditingProjectName]);
+	const recordingUnavailable =
+		exportSession.isExporting ||
+		exportSession.isOptimizingGif ||
+		exportSession.hasPendingExportSave;
 
 	return (
 		<AppFrameHeader className="editor-header">
@@ -277,6 +283,11 @@ export function EditorHeader(props: Props) {
 					handleRetrySaveExport={handleRetrySaveExport}
 					handleStartExportFromDropdown={handleStartExportFromDropdown}
 					revealExportedFile={revealExportedFile}
+					onRecordNew={
+						project.projectBrowserOpen || recordingUnavailable
+							? undefined
+							: () => void handleOpenRecordingHud()
+					}
 					projectPath={project.currentProjectPath}
 					projectSourcePath={project.videoSourcePath}
 					openedSavedProject={project.openedSavedProject}

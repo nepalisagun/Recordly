@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { toast } from "@/components/ui/toast";
 import { translate } from "@/i18n/runtime";
+import { beginAppOperation } from "@/lib/feedback/diagnostics";
 import type { RecorderContext } from "./recorderContext";
 import { getErrorMessage } from "./recordingError";
 import type { NativeCaptureStopResult } from "./recordingNativeCleanup";
@@ -31,6 +32,7 @@ export function useRecorderStop(
 		| "finalizeRecordingSession"
 		| "webcamTimeOffsetMs"
 		| "hideEditorOverlayCursorByDefault"
+		| "captureSourceKind"
 		| "storeMicrophoneSidecar"
 		| "mediaRecorder"
 		| "screenWriter"
@@ -62,6 +64,7 @@ export function useRecorderStop(
 		finalizeRecordingSession,
 		webcamTimeOffsetMs,
 		hideEditorOverlayCursorByDefault,
+		captureSourceKind,
 		storeMicrophoneSidecar,
 		mediaRecorder,
 		screenWriter,
@@ -92,8 +95,10 @@ export function useRecorderStop(
 			setRecording(false);
 			setFinalizing(true);
 
+			const operation = beginAppOperation("recording.native-finalize");
 			void (async () => {
 				const stopStart = performance.now();
+				const stopCaptureSourceKind = captureSourceKind.current;
 				console.log("[PERF:RENDERER] Total Stop Sequence: STARTED");
 
 				const fallbackStartDelayMs = microphoneFallback.startDelayMs;
@@ -105,6 +110,7 @@ export function useRecorderStop(
 
 				const ipcStopStart = performance.now();
 				console.log("[PERF:RENDERER] IPC: stopNativeScreenRecording: STARTED");
+				operation.step("stop-native-capture");
 				let stopped: Promise<NativeCaptureStopResult>;
 				try {
 					stopped = window.electronAPI.stopNativeScreenRecording().catch((error) => ({
@@ -137,6 +143,7 @@ export function useRecorderStop(
 				}
 
 				if (!result.success || !result.path) {
+					operation.step("recover-recording");
 					console.error(
 						"Failed to stop native screen recording:",
 						result.error ?? result.message,
@@ -148,6 +155,7 @@ export function useRecorderStop(
 							fallbackStartDelayMs,
 						);
 						if (recoveredPath) {
+							operation.finish("succeeded");
 							console.log(
 								`[PERF:RENDERER] Total Stop Sequence (RECOVERED) in ${(performance.now() - stopStart).toFixed(2)}ms`,
 							);
@@ -170,6 +178,7 @@ export function useRecorderStop(
 								),
 					);
 					await notifyRecordingFinalizationFailure(failureMessage);
+					operation.finish("failed");
 					return;
 				}
 
@@ -177,11 +186,14 @@ export function useRecorderStop(
 
 				// 1. Finalize the session and switch to editor immediately (Optimistic UI)
 				// We pass null for webcamPath initially to avoid blocking on webcam disk writes/muxing.
+				operation.step("editor-handoff");
 				await finalizeRecordingSession(finalPath, null);
+				operation.finish("succeeded");
 
 				// 2. Perform background finalization (webcam, muxing, sidecars)
 				// We don't await this to keep the UI responsive
 				void (async () => {
+					const supplemental = beginAppOperation("recording.finalize-sidecars");
 					try {
 						// Webcam persistence, microphone sidecars, and Windows muxing are
 						// independent. Run them concurrently so the editor can keep playing
@@ -200,6 +212,7 @@ export function useRecorderStop(
 										timeOffsetMs: webcamTimeOffsetMs.current,
 										hideOverlayCursorByDefault:
 											hideEditorOverlayCursorByDefault.current,
+										captureSourceKind: stopCaptureSourceKind,
 									});
 								} catch (sessionError) {
 									console.error(
@@ -248,17 +261,32 @@ export function useRecorderStop(
 
 						// Update the session state to notify the editor that all background assets (webcam, mic, etc.) are now ready.
 						// This broadcasts a 'recording-session-changed' event that the open editor listens to for re-scanning assets.
+						supplemental.step("update-editor-session");
 						await window.electronAPI.setCurrentRecordingSession({
 							videoPath: finalPath,
 							webcamPath,
 							timeOffsetMs: webcamTimeOffsetMs.current,
 							hideOverlayCursorByDefault: hideEditorOverlayCursorByDefault.current,
+							captureSourceKind: stopCaptureSourceKind,
 						});
+						const failedSidecar =
+							(microphoneResult.status === "fulfilled" && !microphoneResult.value) ||
+							(muxResult.status === "fulfilled" &&
+								muxResult.value?.success === false);
+						supplemental.finish(
+							failedSidecar ||
+								[webcamResult, microphoneResult, muxResult].some(
+									({ status }) => status === "rejected",
+								)
+								? "failed"
+								: "succeeded",
+						);
 
 						console.log(
 							`[PERF:RENDERER] Background Stop Sequence: COMPLETED in ${(performance.now() - stopStart).toFixed(2)}ms`,
 						);
 					} catch (bgError) {
+						supplemental.finish("failed");
 						console.error("Error in background finalization:", bgError);
 					} finally {
 						// After all background tasks are done (webcam, mic sidecars, muxing),
@@ -271,7 +299,10 @@ export function useRecorderStop(
 						}
 					}
 				})();
-			})();
+			})().catch((error) => {
+				operation.finish("failed");
+				throw error;
+			});
 			return;
 		}
 

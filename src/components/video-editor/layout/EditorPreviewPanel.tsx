@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import { type Dispatch, type RefObject, type SetStateAction, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -7,27 +7,30 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-	CaretDown,
 	Crop,
 	MagicWand,
 	MagnifyingGlassPlus,
+	MinusIcon,
 	Pause,
 	Play,
 	Plus,
 	Scissors,
 	SkipBack,
 	SkipForward,
-	SpeakerHigh,
-	SpeakerLow,
-	SpeakerX,
+	Trash,
 } from "@/components/ui/icons";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Slider } from "@/components/ui/slider";
 import type { useI18n } from "@/contexts/I18nContext";
 import { useI18n as useUiLocale } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
-import { formatBinding } from "@/lib/shortcuts";
+import { bindingsEqual, CLEAR_ALL_ZOOMS_SHORTCUT, formatBinding } from "@/lib/shortcuts";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
 import type { useVideoEditorAudio } from "../audio/useVideoEditorAudio";
 import type { CaptionEditTarget } from "../captionEditing";
@@ -44,6 +47,9 @@ import { AnnotationToolbar } from "./AnnotationToolbar";
 import { AspectRatioPicker } from "./AspectRatioPicker";
 import { EditorVideoPreview } from "./EditorVideoPreview";
 import { InlineCropEditor } from "./InlineCropEditor";
+
+// Hidden for now; the playback resolution state and preview scaling stay wired up.
+const SHOW_PLAYBACK_RESOLUTION_PICKER = false;
 
 // Temporarily hide the toolbar while retaining the annotation tools.
 const SHOW_ANNOTATION_TOOLBAR = false;
@@ -72,7 +78,6 @@ type Props = {
 	currentTime: number;
 	isPlaying: boolean;
 	previewVolume: number;
-	setPreviewVolume: Dispatch<SetStateAction<number>>;
 	suspendRendering: boolean;
 	appearance: ReturnType<typeof useAppearanceState>;
 	timeline: ReturnType<typeof useTimelineState>;
@@ -95,11 +100,14 @@ type Props = {
 	setCurrentTime: Dispatch<SetStateAction<number>>;
 	setIsPlaying: Dispatch<SetStateAction<boolean>>;
 	setError: (message: string | null) => void;
+	onImportVideoClip: () => void;
+	canImportVideoClip: boolean;
 };
 
 export function EditorPreviewPanel(props: Props) {
-	const { locale, t: uiText } = useUiLocale();
+	const { t: uiText } = useUiLocale();
 	const { shortcuts, isMac } = useShortcuts();
+	const [playbackResolution, setPlaybackResolution] = useState("1");
 	const {
 		t,
 		videoPath,
@@ -112,7 +120,6 @@ export function EditorPreviewPanel(props: Props) {
 		currentTime,
 		isPlaying,
 		previewVolume,
-		setPreviewVolume,
 		suspendRendering,
 		appearance,
 		timeline,
@@ -136,6 +143,14 @@ export function EditorPreviewPanel(props: Props) {
 		setIsPlaying,
 		setError,
 	} = props;
+	const clearZoomsLabel = t("settings.zoom.clearAllZooms");
+	const clearZoomsTitle = Object.values(shortcuts).some((binding) =>
+		bindingsEqual(binding, CLEAR_ALL_ZOOMS_SHORTCUT),
+	)
+		? clearZoomsLabel
+		: `${clearZoomsLabel} (${formatBinding(CLEAR_ALL_ZOOMS_SHORTCUT, isMac)})`;
+	const splitClipLabel = `${uiText("editing.splitClip", "Split Clip")} (${formatBinding(shortcuts.splitClip, isMac)})`;
+	const playbackResolutionLabel = t("editor.playback.resolution");
 	const currentTimestamp = formatPlaybackTime(projection.timelinePlayheadTime);
 	const durationTimestamp = formatPlaybackTime(projection.timelineDuration);
 	// Reserve label and digit space without changing the inherited UI typography.
@@ -246,6 +261,7 @@ export function EditorPreviewPanel(props: Props) {
 									currentTime={currentTime}
 									isPlaying={isPlaying && !isCropping}
 									previewVolume={previewVolume}
+									previewResolutionScale={Number(playbackResolution) || 1}
 									suspendRendering={suspendRendering || isCropping}
 									appearance={appearance}
 									timeline={timeline}
@@ -294,10 +310,16 @@ export function EditorPreviewPanel(props: Props) {
 								<span className="editor-playback-add-label font-medium">
 									{t("editor.toolbar.addLayer")}
 								</span>
-								<CaretDown className="editor-playback-add-caret h-3 w-3" />
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="start">
+							<DropdownMenuItem
+								onClick={props.onImportVideoClip}
+								disabled={!props.canImportVideoClip}
+								className="cursor-pointer text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+							>
+								{t("ui.importVideo")}
+							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={() => {
 									const nextTrack =
@@ -346,7 +368,7 @@ export function EditorPreviewPanel(props: Props) {
 						variant="ghost"
 						size="icon"
 						className="h-9 w-9"
-						title={`${uiText("editing.splitClip", "Split Clip")} (${formatBinding(shortcuts.splitClip, isMac)})`}
+						title={splitClipLabel}
 					>
 						<Scissors className="h-4 w-4" />
 					</Button>
@@ -376,8 +398,18 @@ export function EditorPreviewPanel(props: Props) {
 							variant="ghost"
 							size="icon"
 							className="h-9 w-9"
-							title={t("editor.playback.skipBack")}
-							onClick={playback.handlePreviewSkipBack}
+							title={`${t("editor.playback.skipBack")} (Home)`}
+							aria-label={t("editor.playback.skipBack")}
+							aria-keyshortcuts="Home"
+							onClick={(event) => {
+								if (event.shiftKey) playback.handleSeek(0);
+								else playback.handlePreviewSkip("backward");
+							}}
+							onKeyDown={(event) => {
+								if (event.key !== "Home") return;
+								event.preventDefault();
+								playback.handleSeek(0);
+							}}
 						>
 							<SkipBack className="h-3.5 w-3.5" weight="fill" />
 						</Button>
@@ -401,7 +433,7 @@ export function EditorPreviewPanel(props: Props) {
 							size="icon"
 							className="h-9 w-9"
 							title={t("editor.playback.skipForward")}
-							onClick={playback.handlePreviewSkipForward}
+							onClick={() => playback.handlePreviewSkip("forward")}
 						>
 							<SkipForward className="h-3.5 w-3.5" weight="fill" />
 						</Button>
@@ -416,47 +448,63 @@ export function EditorPreviewPanel(props: Props) {
 					</div>
 				</div>
 
-				<div className="editor-playback-volume z-10 ml-auto flex items-center">
-					<Popover>
-						<PopoverTrigger asChild>
-							<Button
-								variant="ghost"
-								size="icon"
-								aria-label={t("editor.playback.volume", "Preview volume")}
-								title={t("editor.playback.volume", "Preview volume")}
-							>
-								{previewVolume <= 0.001 ? (
-									<SpeakerX className="size-3.5" />
-								) : previewVolume < 0.5 ? (
-									<SpeakerLow className="size-3.5" />
-								) : (
-									<SpeakerHigh className="size-3.5" />
-								)}
-							</Button>
-						</PopoverTrigger>
-						<PopoverContent
-							side="top"
-							sideOffset={10}
-							aria-label={uiText("ui.previewVolume")}
-							className="flex w-14 flex-col items-center gap-3 p-3"
+				<div className="editor-playback-volume z-10 ml-auto flex items-center gap-1">
+					<div
+						role="group"
+						aria-label={t("shortcuts.actions.zoomTimeline")}
+						className="flex items-center"
+					>
+						<Button
+							onClick={() => timelineRef.current?.zoomTimelineOut()}
+							variant="ghost"
+							size="icon"
+							aria-label={t("native.zoomOut")}
+							title={t("native.zoomOut")}
 						>
-							<span className="text-[10px] tabular-nums text-muted-foreground">
-								{new Intl.NumberFormat(locale, { style: "percent" }).format(
-									previewVolume,
-								)}
-							</span>
-							<Slider
-								aria-label={t("editor.playback.volume", "Preview volume")}
-								orientation="vertical"
-								min={0}
-								max={1}
-								step={0.01}
-								value={[previewVolume]}
-								onValueChange={([value]) => setPreviewVolume(value)}
-								className="h-28"
-							/>
-						</PopoverContent>
-					</Popover>
+							<MinusIcon className="size-3.5" aria-hidden="true" />
+						</Button>
+						<Button
+							onClick={() => timelineRef.current?.zoomTimelineIn()}
+							variant="ghost"
+							size="icon"
+							aria-label={t("native.zoomIn")}
+							title={t("native.zoomIn")}
+						>
+							<Plus className="size-3.5" aria-hidden="true" />
+						</Button>
+					</div>
+					{SHOW_PLAYBACK_RESOLUTION_PICKER && (
+						<div title={playbackResolutionLabel}>
+							<Select
+								aria-label={playbackResolutionLabel}
+								value={playbackResolution}
+								onValueChange={setPlaybackResolution}
+								disabled={!videoPath || isCropping}
+							>
+								<SelectTrigger className="editor-playback-resolution text-xs">
+									<SelectValue className="truncate" />
+								</SelectTrigger>
+								<SelectContent placement="top end" className="min-w-24">
+									<SelectItem value="1">
+										{t("editor.playback.fullResolution")}
+									</SelectItem>
+									<SelectItem value="0.5">1/2</SelectItem>
+									<SelectItem value="0.25">1/4</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+					<Button
+						onClick={() => timelineRef.current?.clearAllZooms()}
+						disabled={timeline.zoomRegions.length === 0}
+						variant="ghost"
+						size="icon"
+						className="h-9 w-9"
+						aria-label={clearZoomsLabel}
+						title={clearZoomsTitle}
+					>
+						<Trash className="h-4 w-4" aria-hidden="true" />
+					</Button>
 				</div>
 			</div>
 		</div>

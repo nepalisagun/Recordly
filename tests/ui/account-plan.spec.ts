@@ -19,6 +19,10 @@ async function openPlan(page: Page, mode: PlanMode) {
 		({ mode }) => {
 			const prices = [{ interval: "monthly" as const, unitAmount: 900, currency: "usd" }];
 			let failedPortal = false;
+			window.electronAPI.openExternalUrl = async (url) => {
+				document.documentElement.dataset.externalUrl = url;
+				return { success: true };
+			};
 			window.electronAPI.cloudBilling = async ({ action }) => {
 				if (action === "catalog")
 					return {
@@ -101,10 +105,10 @@ test("Free accounts can view their plan and upgrade options without starting che
 		Math.abs((await usage.boundingBox())!.width - (await card.boundingBox())!.width),
 	).toBeLessThan(1);
 	await expect(
-		account.getByLabel("Cloud usage", { exact: true }).getByText("2 of 5 used"),
+		account.getByLabel("Cloud usage", { exact: true }).getByText("2 of 5 share links used"),
 	).toBeVisible();
 	await card.getByRole("button", { name: "Upgrade", exact: true }).click();
-	const pricing = page.getByRole("dialog", { name: "Recordly Cloud", exact: true });
+	const pricing = page.getByRole("dialog", { name: "Recordly Plus", exact: true });
 	await expect(pricing).toBeVisible();
 	await expect(page.locator("html")).not.toHaveAttribute("data-billing-action");
 	await pricing.getByRole("button", { name: "Close", exact: true }).click();
@@ -123,15 +127,18 @@ for (const mode of ["paid", "ending"] as const) {
 		page,
 	}) => {
 		const { account, card } = await openPlan(page, mode);
-		await expect(card.getByText("Your Cloud plan is active.")).toBeVisible();
+		await expect(card.getByText("Your Plus plan is active.")).toBeVisible();
 		await expect(
 			card.getByText(mode === "ending" ? /^It ends on / : /^Current billing period ends on /),
 		).toBeVisible();
 		await expect(card.getByRole("button", { name: /^Upgrade\b/ })).toHaveCount(0);
+		await expect(card.getByRole("button", { name: "Refresh plan", exact: true })).toHaveCount(
+			0,
+		);
 		await card.getByRole("button", { name: "Manage subscription", exact: true }).click();
 		await expect(page.locator("html")).toHaveAttribute("data-billing-action", "portal");
 		await expect(
-			page.getByRole("dialog", { name: "Recordly Cloud", exact: true }),
+			page.getByRole("dialog", { name: "Recordly Plus", exact: true }),
 		).not.toBeVisible();
 		await account.screenshot({
 			path: test.info().outputPath(`account-plan-${mode}.png`),
@@ -140,16 +147,31 @@ for (const mode of ["paid", "ending"] as const) {
 	});
 }
 
-test("complimentary Cloud has no invented billing period or portal", async ({ page }) => {
-	const { card } = await openPlan(page, "complimentary");
-	await expect(card.getByText("Your Cloud plan is active.")).toBeVisible();
-	await expect(
-		card.getByRole("button", { name: "Manage subscription", exact: true }),
-	).toHaveCount(0);
-	await expect(
-		card.getByText(/period ends|It ends on|Subscription management is not available/),
-	).toHaveCount(0);
-});
+for (const mode of ["complimentary", "paid_no_portal"] as const) {
+	test(`${mode} Cloud accounts can see why subscription management is unavailable`, async ({
+		page,
+	}) => {
+		const { card } = await openPlan(page, mode);
+		await expect(card.getByText("Your Plus plan is active.")).toBeVisible();
+		if (mode === "complimentary")
+			await expect(card.getByText(/period ends|It ends on/)).toHaveCount(0);
+		const manage = card.getByRole("button", { name: "Manage subscription", exact: true });
+		const help = card.getByText(/No billing portal is available for this account/);
+		await expect(help).toBeHidden();
+		await expect(card.getByRole("button", { name: "Refresh plan", exact: true })).toHaveCount(
+			0,
+		);
+		await manage.click();
+		await expect(manage).toHaveAttribute("aria-expanded", "true");
+		await expect(help).toBeVisible();
+		await help.getByRole("link", { name: "contact support", exact: true }).press("Enter");
+		await expect(page.locator("html")).toHaveAttribute(
+			"data-external-url",
+			"mailto:support@recordly.dev",
+		);
+		await expect(page.locator("html")).not.toHaveAttribute("data-billing-action");
+	});
+}
 
 for (const mode of ["unavailable", "loading"] as const) {
 	test(`${mode} billing never labels an unverified account Free and can recover`, async ({
@@ -171,7 +193,7 @@ for (const mode of ["unavailable", "loading"] as const) {
 			document.dispatchEvent(new Event("release-plan"));
 		});
 		if (mode === "unavailable")
-			await card.getByRole("button", { name: "Refresh plan", exact: true }).click();
+			await card.getByRole("button", { name: "Retry", exact: true }).click();
 		await expect(card.getByText("Free", { exact: true })).toBeVisible();
 	});
 }
@@ -195,17 +217,4 @@ test("portal errors keep management available for retry without exposing provide
 	await expect(manage).toBeEnabled();
 	await manage.click();
 	await expect(card.getByRole("alert")).toHaveCount(0);
-});
-
-test("a paid plan without a portal explains the limitation and offers refresh", async ({
-	page,
-}) => {
-	const { card } = await openPlan(page, "paid_no_portal");
-	await expect(
-		card.getByText("Subscription management is not available yet. Try refreshing your plan."),
-	).toBeVisible();
-	await expect(
-		card.getByRole("button", { name: "Manage subscription", exact: true }),
-	).toHaveCount(0);
-	await expect(card.getByRole("button", { name: "Refresh plan", exact: true })).toBeEnabled();
 });

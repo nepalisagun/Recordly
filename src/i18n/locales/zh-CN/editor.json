@@ -65,7 +65,7 @@
 		"copyLink": "复制链接",
 		"shareLink": "分享链接",
 		"saveLinkFailed": "分享已创建，但无法将链接保存到本地",
-		"verifyPlanFailed": "无法验证你的云端方案。",
+		"verifyPlanFailed": "无法验证你的方案。",
 		"refreshPlan": "刷新方案",
 		"share": "分享",
 		"signInToShare": "登录以分享",
@@ -84,6 +84,8 @@
 		"videos": "视频"
 	},
 	"playback": {
+		"resolution": "播放分辨率",
+		"fullResolution": "完整",
 		"play": "播放",
 		"pause": "暂停",
 		"skipBack": "后退",
@@ -243,6 +245,7 @@
 		"savingGif": "正在保存 GIF…",
 		"encodingGif": "正在完成 GIF…",
 		"errorCopied": "已复制错误",
+		"nvidiaCudaFallback": "NVIDIA CUDA 导出失败。Recordly 正在尝试其他导出方式。",
 		"errorCopyFailed": "无法复制。请选择错误文本并手动复制。",
 		"copyError": "复制错误"
 	},
@@ -250,8 +253,10 @@
 		"processingAudioEdits": "正在处理带有速度/叠加编辑的音频"
 	},
 	"toolbar": {
-		"addLayer": "添加图层",
-		"splitClip": "拆分片段 (C)"
+		"addLayer": "添加",
+		"splitClip": "拆分片段 (C)",
+		"trimStart": "将开头剪到播放头 ({{shortcut}})",
+		"trimEnd": "将结尾剪到播放头 ({{shortcut}})"
 	},
 	"timeline": {
 		"expand": "展开时间轴",

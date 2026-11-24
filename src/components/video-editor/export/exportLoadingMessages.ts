@@ -1,20 +1,35 @@
 export type ExportLoadingMessage = string | readonly string[];
 
-export const EXPORT_LOADING_MESSAGES: readonly ExportLoadingMessage[] = [
+export const SENSIBLE_EXPORT_LOADING_MESSAGES: readonly ExportLoadingMessage[] = [
+	"Preparing your video...",
+	"Processing your recording...",
+	"Working through the timeline...",
+	"Rendering frames...",
+	"Compositing layers...",
+	"Applying backgrounds...",
+	"Stitching segments together...",
+	"Fine-tuning colors...",
+	"Encoding video...",
+	"Encoding audio...",
+	"Mixing audio tracks...",
+	"Syncing audio and video...",
+	"Preserving image quality...",
+	"Optimizing file size...",
+	"Writing video data...",
+	"Packaging the final file...",
+	"Thanks for your patience...",
+];
+
+export const SILLY_EXPORT_LOADING_MESSAGES: readonly ExportLoadingMessage[] = [
 	"Reticulating splines...",
-	"Try licking your elbow while reading this.",
-	"keep calm and npm install",
-	"Are we there yet?",
-	"Just count to 10",
-	"Dividing by zero...",
 	["Updating Updater...", "Downloading Downloader...", "Debugging Debugger..."],
 	"One mississippi, two mississippi...",
 	"TODO: Insert elevator music",
-	"You are number 2843684714 in the queue",
-	"When nothing is going right, go left",
-	"Resistance is Futile",
-	"Grrr. Bark. Bark. Grrr",
-	"Don't Panic",
+];
+
+export const EXPORT_LOADING_MESSAGES: readonly ExportLoadingMessage[] = [
+	...SENSIBLE_EXPORT_LOADING_MESSAGES,
+	...SILLY_EXPORT_LOADING_MESSAGES,
 ];
 
 export function shuffleExportLoadingMessages(messages: readonly ExportLoadingMessage[]) {

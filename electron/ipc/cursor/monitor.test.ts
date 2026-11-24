@@ -1,12 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
+
 vi.mock("electron", () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 vi.mock("../paths/binaries", () => ({
 	ensureNativeCursorMonitorBinary: vi.fn(),
 	getCursorMonitorExePath: vi.fn(),
 }));
 vi.mock("./interaction", () => ({ recordCursorMouseDown: vi.fn(), recordCursorMouseUp: vi.fn() }));
+
+import { currentCursorVisualType, setNativeCursorMonitorOutputBuffer } from "../state";
 import { recordCursorMouseDown, recordCursorMouseUp } from "./interaction";
-import { setNativeCursorMonitorOutputBuffer } from "../state";
 import { handleCursorMonitorStdout } from "./monitor";
 
 beforeEach(() => {
@@ -29,4 +31,9 @@ it("retains compatibility with native helpers that omit button identity", () => 
 	handleCursorMonitorStdout(Buffer.from("INTERACTION:mousedown\nINTERACTION:mouseup\n"));
 	expect(recordCursorMouseDown).toHaveBeenCalledWith(1);
 	expect(recordCursorMouseUp).toHaveBeenCalledWith(undefined);
+});
+
+it.each(["move", "resize-nwse", "resize-nesw"])("keeps native %s cursor state", (type) => {
+	handleCursorMonitorStdout(Buffer.from(`STATE:${type}\nSTATE:unsupported\n`));
+	expect(currentCursorVisualType).toBe(type);
 });

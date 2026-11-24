@@ -1,11 +1,8 @@
-import { Button, Label, Modal, Radio, RadioGroup } from "@heroui/react";
+import { Button, Modal } from "@heroui/react";
 import { Check } from "@phosphor-icons/react";
+import { OnboardingHeader, OnboardingLayout } from "@/components/auth/OnboardingLayout";
 import { ErrorReportButton } from "@/components/feedback/ErrorReportButton";
-import {
-	OnboardingHeader,
-	OnboardingHeroTitle,
-	OnboardingLayout,
-} from "@/components/auth/OnboardingLayout";
+import { RecordlyMark } from "@/components/ui/RecordlyMark";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import type { CloudBillingPrice } from "@/types/cloudBilling";
 import { useBilling } from "./BillingProvider";
@@ -15,54 +12,48 @@ import { getDiscountPercent, getPlusPrice, hasVerifiedCheckoutPrice } from "./pr
 import "./Billing.css";
 import "./SplitPricingModal.css";
 
-function MonthlyPlanOption({ price, disabled }: { price: CloudBillingPrice; disabled: boolean }) {
+/** Stripe states where a started subscription is waiting on a working payment method. */
+const PAYMENT_FAILED_STATUSES = new Set(["incomplete", "past_due", "unpaid"]);
+
+function MonthlyPrice({ price }: { price: CloudBillingPrice }) {
 	const t = useScopedT("billing");
 	const { locale } = useI18n();
 	const discount = getDiscountPercent(price);
+	const { regularUnitAmount } = price;
 	return (
-		<RadioGroup
-			aria-label={t("accountPlan", "Plan & billing")}
-			value="monthly"
-			isDisabled={disabled}
-			className="split-upgrade-plans"
-		>
-			<Radio value="monthly" className="split-upgrade-plan">
-				<Radio.Content>
-					<Radio.Control>
-						<Radio.Indicator />
-					</Radio.Control>
-					<div className="split-upgrade-plan-name">
-						<Label>{t("monthly", "Monthly")}</Label>
-						{price.promotion === "early_bird" && discount !== null && (
-							<span>{t("earlyPricing", "Early bird pricing")}</span>
-						)}
-					</div>
-					<div className="pricing-price-offer">
-						{discount !== null && (
-							<div className="pricing-regular-price">
-								<del>
-									{formatPrice(
-										{ ...price, unitAmount: price.regularUnitAmount! },
-										locale,
-									)}
-								</del>
-								<span className="pricing-price-banner pricing-heading-offer">
-									{t("discount", "{{percent}}% off", { percent: discount })}
-								</span>
-							</div>
-						)}
-						<p className="pricing-price">
-							{formatPrice(price, locale)}
-							<span> {t("perMonth", "USD / month")}</span>
-						</p>
-					</div>
-				</Radio.Content>
-			</Radio>
-		</RadioGroup>
+		<div className="pricing-price-offer split-upgrade-price">
+			<p className="split-upgrade-price-line">
+				{discount !== null && regularUnitAmount !== undefined && (
+					<>
+						<span className="sr-only">
+							{t("regularPrice", "Regular price {{price}} USD per month", {
+								price: (regularUnitAmount / 100).toLocaleString(locale, {
+									maximumFractionDigits: 2,
+								}),
+							})}
+						</span>
+						<s className="pricing-regular-price" aria-hidden="true">
+							{formatPrice({ ...price, unitAmount: regularUnitAmount }, locale)}
+						</s>{" "}
+					</>
+				)}
+				<span className="pricing-price">{formatPrice(price, locale)}</span>{" "}
+				<span className="split-upgrade-price-period">{t("perMonth", "per month")}</span>
+			</p>
+			{discount !== null && (
+				<p className="split-upgrade-savings">
+					{price.promotion === "early_bird"
+						? t("earlyBirdSavings", "{{percent}}% off with early bird pricing", {
+								percent: discount,
+							})
+						: t("discount", "{{percent}}% off", { percent: discount })}
+				</p>
+			)}
+		</div>
 	);
 }
 
-/** Cloud upgrade using Recordly styling and the verified billing catalog. */
+/** Plus upgrade using Recordly styling and the verified billing catalog. */
 export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 	const t = useScopedT("billing");
 	const { locale, t: appT } = useI18n();
@@ -93,41 +84,84 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 	);
 	const portalAvailable = Boolean(status?.billing.portalAvailable);
 	const manageSubscription = portalAvailable && (plus || !checkoutReady);
-	const pricingLoading = loading || (!manageSubscription && catalogLoading);
-	const checkingPricing = Boolean(user && !needsSignIn && pricingLoading);
 	const paymentPending = !plus && awaitingCheckout && !manageSubscription;
+	const pricingLoading =
+		!manageSubscription && (!checkoutReady || paymentPending) && (loading || catalogLoading);
+	const checkingPricing = Boolean(user && !needsSignIn && pricingLoading);
 	const retryPricing = !(manageSubscription || checkoutReady) || paymentPending;
 	const showSubscriptionPricing = !plus && !manageSubscription;
 	const currentPeriodEnd = status?.billing.currentPeriodEnd;
+	const startLabel = t("start", "Get Started");
+	const showError = Boolean(user && !loading && !needsSignIn && error);
+	const paymentFailed = PAYMENT_FAILED_STATUSES.has(status?.billing.subscriptionStatus ?? "");
+	// One status line at most: stacked notices read as noise next to a single action.
+	const notice = plus
+		? [
+				t("active", "Your Plus plan is active."),
+				status.billing.cancelAtPeriodEnd && currentPeriodEnd
+					? t("ends", "It ends on {{date}}.", {
+							date: new Date(currentPeriodEnd * 1000).toLocaleDateString(locale),
+						})
+					: "",
+				t(
+					"noExpiry",
+					"Cloud recordings have no expiry while Plus is active. They expire 7 days after Plus ends.",
+				),
+				portalAvailable
+					? t(
+							"portal",
+							"Manage your payment details or cancel in the secure billing portal.",
+						)
+					: "",
+			]
+				.filter(Boolean)
+				.join(" ")
+		: manageSubscription
+			? paymentFailed
+				? t(
+						"paymentFailed",
+						"Your payment didn’t go through. Update your payment method to start Plus.",
+					)
+				: t(
+						"attention",
+						"Your subscription needs attention. Open Manage subscription to review your payment details, invoices or cancellation options.",
+					)
+			: paymentPending
+				? t(
+						"checkout",
+						"Complete checkout in your browser, then return here. Your plan will update after payment is confirmed.",
+					)
+				: checkingPricing && !busy
+					? t("loadingPricing", "Loading pricing…")
+					: null;
 	const actionLabel =
 		!user || needsSignIn
-			? t("signIn", "Sign in to continue")
-			: checkingPricing && !busy
-				? t("loadingPricing", "Loading pricing…")
-				: paymentPending
-					? t("checkPayment", "Check payment status")
-					: retryPricing
-						? plus
-							? t("refreshPlan", "Refresh plan")
-							: t("retryPricing", "Retry loading pricing")
-						: plus || manageSubscription
-							? t("manage", "Manage subscription")
-							: t("start", "Get started");
+			? startLabel
+			: paymentPending
+				? t("checkPayment", "Check payment status")
+				: manageSubscription
+					? t("manage", "Manage subscription")
+					: plus
+						? t("refreshPlan", "Refresh plan")
+						: checkoutReady || checkingPricing
+							? startLabel
+							: t("retryPricing", "Retry loading pricing");
 	const pending = Boolean(busy) || checkingPricing;
+	const [headingBefore, headingAfter] = (
+		showSubscriptionPricing ? t("upgradeHeading", "Upgrade to {{plus}}") : "{{plus}}"
+	).split("{{plus}}");
 	const benefits = [
-		t("featureLicense", "Full commercial license"),
-		t("featureLinkSharing", "Share any video with a 24/7 link"),
-		t("featureStorage", "Unlimited cloud storage and bandwidth"),
-		t("featurePlayback", "Play cloud videos in FHD 1080p"),
-		t("featureCaptionExport", "Export caption SRT and VTT files"),
-		t("featurePrioritySupport", "Priority support service"),
+		t("outcomeLicenseTitle", "Use Recordly for commercial projects"),
+		t("outcomeLinksTitle", "Share freely with unlimited links"),
+		t("outcomeStorageTitle", "Store everything on the cloud"),
+		t("outcomePlaybackTitle", "Play cloud videos in clear FHD"),
 	];
 
 	return (
 		<Modal isOpen={pricingOpen} onOpenChange={setPricingOpen}>
 			<Modal.Backdrop variant="blur" className="split-upgrade-backdrop">
 				<Modal.Container size="lg" scroll="inside">
-					<Modal.Dialog aria-label="Recordly Cloud" className="split-upgrade-modal">
+					<Modal.Dialog aria-label="Recordly Plus" className="split-upgrade-modal">
 						<Modal.CloseTrigger
 							className="split-upgrade-close"
 							aria-label={appT("common.actions.close", "Close")}
@@ -143,54 +177,40 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 										<OnboardingHeader
 											centered
 											title={
-												<OnboardingHeroTitle
-													text={t(
-														"upgradeHeading",
-														"Unlock Recordly's full power",
-													).replace("Recordly", "{{brand}}")}
-												/>
+												<span className="recordly-signin-hero">
+													{headingBefore}
+													<span className="split-upgrade-brand">
+														<RecordlyMark className="split-upgrade-mark" />{" "}
+														Plus
+													</span>
+													{headingAfter}
+												</span>
 											}
-											description={t(
-												"intro",
-												"Commercial Use, Shareable Links, Cloud Storage and More.",
-											)}
 										/>
 									</div>
 									<div className="split-upgrade-details">
-										<section
+										{showSubscriptionPricing && price && (
+											<MonthlyPrice price={price} />
+										)}
+										<ul
 											className="split-upgrade-benefits"
-											aria-label={t("yourBenefits", "Your Cloud benefits")}
+											aria-label={t("yourBenefits", "Your Plus benefits")}
 										>
-											<h3>{t("benefits", "Cloud benefits")}</h3>
-											<ul>
-												{benefits.map((benefit) => (
-													<li key={benefit}>
-														<span className="split-upgrade-check">
-															<Check
-																weight="bold"
-																size={14}
-																aria-hidden="true"
-															/>
-														</span>
-														<span>{benefit}</span>
-													</li>
-												))}
-											</ul>
-										</section>
-										<div className="split-upgrade-purchase">
-											{showSubscriptionPricing && (
-												<>
-													{price && (
-														<MonthlyPlanOption
-															price={price}
-															disabled={
-																Boolean(busy) || paymentPending
-															}
+											{benefits.map((benefit) => (
+												<li key={benefit}>
+													<span className="split-upgrade-check">
+														<Check
+															weight="bold"
+															size={12}
+															aria-hidden="true"
 														/>
-													)}
-												</>
-											)}
-											{user && !loading && !needsSignIn && error && (
+													</span>
+													{benefit}
+												</li>
+											))}
+										</ul>
+										<div className="split-upgrade-purchase">
+											{showError && error && (
 												<p className="pricing-error" role="alert">
 													{t(
 														"connectionError",
@@ -202,36 +222,9 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 													/>
 												</p>
 											)}
-											{manageSubscription && !plus && (
+											{!showError && notice && (
 												<p className="pricing-feedback" role="status">
-													{t(
-														"attention",
-														"Your subscription needs attention. Open Manage subscription to review your payment details, invoices or cancellation options.",
-													)}
-												</p>
-											)}
-											{plus && (
-												<p className="pricing-feedback" role="status">
-													{t("active", "Your Cloud plan is active.")}
-													{status.billing.cancelAtPeriodEnd &&
-													currentPeriodEnd
-														? ` ${t("ends", "It ends on {{date}}.", { date: new Date(currentPeriodEnd * 1000).toLocaleDateString(locale) })}`
-														: ""}{" "}
-													{t(
-														"noExpiry",
-														"Cloud recordings have no expiry while Cloud is active. They expire 7 days after Cloud ends.",
-													)}
-													{portalAvailable
-														? ` ${t("portal", "Manage your payment details or cancel in the secure billing portal.")}`
-														: ""}
-												</p>
-											)}
-											{!plus && awaitingCheckout && (
-												<p className="pricing-feedback" role="status">
-													{t(
-														"checkout",
-														"Complete checkout in your browser, then return here. Your plan will update after payment is confirmed.",
-													)}
+													{notice}
 												</p>
 											)}
 											<div className="split-upgrade-actions">
@@ -243,7 +236,7 @@ export function SplitPricingModal({ onSignIn }: { onSignIn: () => void }) {
 														size="lg"
 														className="split-upgrade-cta"
 														aria-label={actionLabel}
-														isPending={pending}
+														isPending={Boolean(busy)}
 														isDisabled={pending}
 														onPress={() => {
 															if (!user || needsSignIn) {

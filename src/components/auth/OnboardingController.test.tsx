@@ -1,8 +1,10 @@
 import type { User } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OnboardingController } from "./OnboardingController";
+import OnboardingWindow from "./OnboardingWindow";
 import { RecordingPermissionsDialog } from "./RecordingPermissionsDialog";
 import { RecordlySignInDialog } from "./RecordlySignInDialog";
+import { useRecordlyAuth } from "./useRecordlyAuth";
 
 const state = vi.hoisted(() => ({
 	slots: [] as { value?: unknown; deps?: readonly unknown[]; cleanup?: () => void }[],
@@ -64,9 +66,11 @@ vi.mock("@/lib/appSettings", () => ({
 }));
 vi.mock("./RecordlySignInDialog", () => ({ RecordlySignInDialog: () => null }));
 vi.mock("./RecordingPermissionsDialog", () => ({ RecordingPermissionsDialog: () => null }));
+vi.mock("./useRecordlyAuth", () => ({ useRecordlyAuth: vi.fn() }));
 
 const pendingKey = "recordly.onboarding.permissionsRequested";
 const seenKey = "recordly.onboarding.v1.seen";
+const guestKey = "recordly.onboarding.signInSkipped";
 const user = { id: "restored-account" } as User;
 const hud = vi.fn(async () => undefined);
 const closeWindow = vi.fn(async () => undefined);
@@ -96,10 +100,93 @@ beforeEach(() => {
 		location: { search: "?windowType=onboarding" },
 		electronAPI: {
 			showOnboardingWindow: vi.fn(async () => false),
-			onRecordingPermissionsRequested: vi.fn(() => () => undefined),
 			showRecordingHud: hud,
 			closeOnboardingWindow: closeWindow,
 		},
+	});
+});
+
+describe("Windows startup after sign-in", () => {
+	const startup = vi.fn(async (_action: string) => true);
+	const isCallbackPending = vi.fn(() => false);
+	function renderStartup(auth: Partial<ReturnType<typeof useRecordlyAuth>> = {}) {
+		vi.mocked(useRecordlyAuth).mockReturnValue({
+			user: null,
+			loading: false,
+			configured: true,
+			savedSignInLocked: false,
+			accessToken: undefined,
+			callbackError: undefined,
+			callbackVersion: 0,
+			callbackActivity: { pending: false },
+			isCallbackPending,
+			...auth,
+		});
+		state.index = 0;
+		const child = OnboardingWindow().props.children;
+		const controller = child.type(child.props);
+		const result = controller ? controller.type(controller.props) : null;
+		for (const effect of state.effects.splice(0)) effect();
+		return result;
+	}
+
+	beforeEach(() => {
+		vi.stubEnv("DEV", false);
+		window.location.search = "?windowType=onboarding&startup=1";
+		window.electronAPI.getPlatform = vi.fn(async () => "win32");
+		state.settings.set(seenKey, true);
+		window.electronAPI.resolveStartupOnboarding = startup;
+		isCallbackPending.mockReturnValue(false);
+	});
+
+	it("waits for Start recording after sign-in and opens the HUD without opening the dashboard", async () => {
+		expect(renderStartup()).toBeNull();
+		expect(renderStartup()?.props).toMatchObject({
+			onboarding: true,
+			onContinueAsGuest: expect.any(Function),
+		});
+		isCallbackPending.mockReturnValue(true);
+		const waiting = renderStartup({ user, callbackActivity: { pending: true } });
+		expect(waiting?.type).toBe(RecordlySignInDialog);
+		expect(waiting?.props.finishDisabled).toBe(true);
+		waiting?.props.onAuthenticated();
+		expect(startup).not.toHaveBeenCalledWith("continue");
+
+		isCallbackPending.mockReturnValue(false);
+		const ready = renderStartup({ user });
+		expect(ready?.type).toBe(RecordlySignInDialog);
+		expect(ready?.props.finishDisabled).toBe(false);
+		expect(startup).not.toHaveBeenCalledWith("continue");
+		ready?.props.onAuthenticated();
+		expect(startup.mock.calls.filter(([action]) => action !== "show")).toEqual([["continue"]]);
+		expect(hud).not.toHaveBeenCalled();
+		expect(closeWindow).not.toHaveBeenCalled();
+	});
+
+	it("shows Start recording after a cold-start sign-in callback", () => {
+		expect(renderStartup({ user, callbackVersion: 1 })).toBeNull();
+		const ready = renderStartup({ user, callbackVersion: 1 });
+		expect(ready?.type).toBe(RecordlySignInDialog);
+		expect(ready?.props.finishDisabled).toBe(false);
+		expect(startup).not.toHaveBeenCalledWith("continue");
+	});
+
+	it("opens the HUD automatically when restoring a saved session", async () => {
+		expect(renderStartup({ user })).toBeNull();
+		await vi.waitFor(() => expect(startup).toHaveBeenCalledExactlyOnceWith("continue"));
+	});
+
+	it("lets a returning Windows guest retry a failed HUD handoff", async () => {
+		state.settings.set(guestKey, true);
+		startup.mockResolvedValueOnce(false);
+		expect(renderStartup()).toBeNull();
+		await vi.waitFor(() => expect(startup).toHaveBeenCalledWith("continue"));
+		const ready = renderStartup();
+		expect(ready?.props.user).toBeNull();
+		expect(ready?.props.finishDisabled).toBe(false);
+		expect(ready?.props.onContinueAsGuest()).toBe(true);
+		ready?.props.onAuthenticated();
+		expect(startup.mock.calls.filter(([action]) => action === "continue")).toHaveLength(2);
 	});
 });
 
@@ -145,22 +232,36 @@ describe("onboarding account and permission restart", () => {
 		});
 	});
 
-	it("preserves production account gating even if the dev tour was dismissed", () => {
+	it("offers the shared production onboarding even if the dev tour was dismissed", async () => {
 		vi.stubEnv("DEV", false);
 		state.settings.set("recordly.dev.onboardingDismissed", true);
 		state.settings.set(seenKey, true);
 		render({ standalone: false, user: null });
-		const result = render({ standalone: false, user: null });
-		expect(result?.props).toMatchObject({ requireSignIn: true, open: true, user: null });
+		await vi.waitFor(() =>
+			expect(render({ standalone: false, user: null })?.props).toMatchObject({
+				onboarding: true,
+				onContinueAsGuest: expect.any(Function),
+			}),
+		);
 	});
 
-	it("requires production sign-in when a previously restored session expires", () => {
+	it("opens shared onboarding when a previously restored session expires", () => {
 		vi.stubEnv("DEV", false);
 		state.settings.set(seenKey, true);
 		render({ standalone: false });
 		render({ standalone: false, user: null });
-		const result = render({ standalone: false, user: null });
-		expect(result?.props).toMatchObject({ requireSignIn: true, open: true, user: null });
+		expect(window.electronAPI.showOnboardingWindow).toHaveBeenCalledExactlyOnceWith({
+			preview: false,
+		});
+	});
+
+	it("reads the guest choice saved by a separate onboarding window", () => {
+		vi.stubEnv("DEV", false);
+		render({ standalone: false, ready: false, user: null });
+		state.settings.set(seenKey, true);
+		state.settings.set(guestKey, true);
+		render({ standalone: false, user: null });
+		expect(render({ standalone: false, user: null })).toBeNull();
 	});
 
 	it("resumes unfinished first-run permissions after closing and restarting", async () => {
@@ -352,32 +453,4 @@ it("opens production permission recovery only once for each new request nonce", 
 	]);
 	expect(state.settings.get(seenKey)).toBe(true);
 	expect(state.writes.some(([key]) => key === seenKey)).toBe(false);
-});
-
-it("opens real permission recovery from a native event even after the dev tour was dismissed", async () => {
-	window.location.search = "?windowType=editor";
-	state.settings.set(seenKey, true);
-	state.settings.set("recordly.dev.onboardingDismissed", true);
-	render({ standalone: false });
-	expect(window.electronAPI.showOnboardingWindow).not.toHaveBeenCalled();
-	const requestPermissions = vi
-		.mocked(window.electronAPI.onRecordingPermissionsRequested)
-		.mock.calls.at(-1)?.[0];
-	expect(requestPermissions).toBeTypeOf("function");
-	requestPermissions!();
-	expect(state.settings.get(pendingKey)).toBe(true);
-	expect(window.electronAPI.showOnboardingWindow).toHaveBeenCalledExactlyOnceWith({
-		preview: false,
-	});
-	await vi.waitFor(() => {
-		const recovery = render({ standalone: false });
-		expect(recovery?.type).toBe(RecordingPermissionsDialog);
-		expect(recovery?.props.open).toBe(true);
-	});
-	expect(window.electronAPI.showOnboardingWindow).toHaveBeenCalledOnce();
-	expect(state.settings.get(seenKey)).toBe(true);
-	expect(state.settings.get("recordly.dev.onboardingDismissed")).toBe(true);
-	expect(
-		state.writes.some(([key]) => key === seenKey || key === "recordly.dev.onboardingDismissed"),
-	).toBe(false);
 });

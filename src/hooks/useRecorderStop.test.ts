@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NativeCaptureStopResult } from "./recordingNativeCleanup";
 import { RecordingFileWriter } from "./recordingFileWriter";
+import type { NativeCaptureStopResult } from "./recordingNativeCleanup";
 import { useRecorderEditorSession } from "./useRecorderEditorSession";
 import { useRecorderStop } from "./useRecorderStop";
 
@@ -37,7 +37,8 @@ function createContext() {
 		finalizeRecordingSession: vi.fn().mockResolvedValue(undefined),
 		webcamTimeOffsetMs: { current: 0 },
 		hideEditorOverlayCursorByDefault: { current: false },
-		storeMicrophoneSidecar: vi.fn().mockResolvedValue(null),
+		captureSourceKind: { current: "window" as "screen" | "window" },
+		storeMicrophoneSidecar: vi.fn().mockResolvedValue(true),
 		mediaRecorder: { current: null as MediaRecorder | null },
 		screenWriter: { current: null as RecordingFileWriter | null },
 		pendingWebcamPathPromise: { current: null as Promise<string | null> | null },
@@ -57,6 +58,8 @@ const api = {
 	openLoadingRecordingEditor: vi.fn(),
 	finishRecordingEditor: vi.fn(),
 	switchToEditor: vi.fn(),
+	muxNativeWindowsRecording: vi.fn(),
+	recordOperationDiagnostic: vi.fn(),
 };
 function stop(context: ReturnType<typeof createContext>) {
 	useRecorderStop(
@@ -75,6 +78,28 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 describe("recording stop editor handoff", () => {
+	it.each([
+		"microphone",
+		"mux",
+	])("records a handled %s failure after opening the editor", async (task) => {
+		const context = createContext();
+		context.nativeWindowsRecording.current = task === "mux";
+		context.storeMicrophoneSidecar.mockResolvedValue(task !== "microphone");
+		api.stopNativeScreenRecording.mockResolvedValue({ success: true, path: "/capture.mp4" });
+		api.muxNativeWindowsRecording.mockResolvedValue({ success: false, error: "Mux failed" });
+		stop(context);
+		await vi.waitFor(() => {
+			expect(api.recordOperationDiagnostic).toHaveBeenCalledWith(
+				expect.objectContaining({
+					name: "recording.finalize-sidecars",
+					phase: "finish",
+					outcome: "failed",
+				}),
+			);
+		});
+		expect(api.finishRecordingEditor).toHaveBeenCalledOnce();
+	});
+
 	it("opens the loading editor before native stop settles and publishes the valid session once", async () => {
 		let resolve!: (result: NativeCaptureStopResult) => void;
 		api.stopNativeScreenRecording.mockReturnValue(
@@ -104,7 +129,7 @@ describe("recording stop editor handoff", () => {
 		expect(api.finishRecordingEditor).toHaveBeenCalledOnce();
 		expect(api.setCurrentVideoPath).toHaveBeenCalledWith(
 			"/recordings/completed.mp4",
-			expect.any(Object),
+			expect.objectContaining({ captureSourceKind: "window" }),
 		);
 		expect(context.openLoadingEditor.mock.invocationCallOrder[0]).toBeLessThan(
 			context.finalizeRecordingSession.mock.invocationCallOrder[0],

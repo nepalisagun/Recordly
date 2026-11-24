@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import VideoPlayback, { type VideoPlaybackRef } from "@/components/video-editor/VideoPlayback";
 import {
 	type AnnotationRegion,
 	DEFAULT_ANNOTATION_STYLE,
 	DEFAULT_AUTO_CAPTION_SETTINGS,
 } from "@/components/video-editor/types";
+import VideoPlayback, { type VideoPlaybackRef } from "@/components/video-editor/VideoPlayback";
+import { getStatefulCursorAsset } from "@/components/video-editor/videoPlayback/cursorAssetRegistry";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { FrameRenderer } from "@/lib/exporter/modernFrameRenderer";
-import { getStatefulCursorAsset } from "@/components/video-editor/videoPlayback/cursorAssetRegistry";
 import "@/index.css";
 
 const captionSettings = { ...DEFAULT_AUTO_CAPTION_SETTINGS, enabled: true };
@@ -49,7 +49,9 @@ const cursorTelemetry = [
 ];
 const noop = () => undefined;
 const onError = (error: string) => {
-	throw new Error(error);
+	setTimeout(() => {
+		throw new Error(error);
+	});
 };
 const annotation: AnnotationRegion = {
 	id: "text",
@@ -130,6 +132,7 @@ function Preview() {
 		} finally {
 			frame?.close();
 			renderer.destroy();
+			playback.current?.regenerateFrame();
 			setSuspended(false);
 		}
 	};

@@ -7,26 +7,26 @@ import {
 	selectedSource,
 	setNativeScreenRecordingActive,
 	setWindowsCapturePaused,
-	setWindowsCaptureTargetPath,
-	setWindowsCaptureTempPath,
-	windowsCaptureTempPath,
-	setWindowsPendingVideoPath,
-	windowsSystemAudioPath,
-	windowsMicAudioPath,
-	windowsCaptureProcess,
 	setWindowsCaptureProcess,
 	setWindowsCaptureStopRequested,
+	setWindowsCaptureTargetPath,
+	setWindowsCaptureTempPath,
 	setWindowsNativeCaptureActive,
+	setWindowsPendingVideoPath,
 	windowsCaptureOutputBuffer,
+	windowsCaptureProcess,
 	windowsCaptureStopRequested,
 	windowsCaptureTargetPath,
+	windowsCaptureTempPath,
+	windowsMicAudioPath,
 	windowsNativeCaptureActive,
+	windowsSystemAudioPath,
 } from "../state";
 import { AudioSyncAdjustment } from "../types";
 import { moveFileWithOverwrite } from "../utils";
+import { validateRecordedVideo } from "./diagnostics";
 import { emitRecordingInterrupted } from "./events";
 import { parseNativeCaptureInterruption } from "./interruption";
-import { validateRecordedVideo } from "./diagnostics";
 import { attachNativeCaptureStdinLifecycle } from "./nativeCaptureCommand";
 
 const WINDOWS_CAPTURE_STOP_TIMEOUT_MS = 45_000;
@@ -76,7 +76,10 @@ export async function isNativeWindowsCaptureAvailable(): Promise<boolean> {
 }
 
 export function waitForWindowsCaptureStart(proc: ChildProcessWithoutNullStreams) {
-	return new Promise<void>((resolve, reject) => {
+	return new Promise<{
+		captureSize: { width: number; height: number } | null;
+		systemAudioCaptureUnavailable: boolean;
+	}>((resolve, reject) => {
 		const timer = setTimeout(() => {
 			cleanup();
 			reject(new Error("Timed out waiting for native Windows capture to start"));
@@ -87,7 +90,15 @@ export function waitForWindowsCaptureStart(proc: ChildProcessWithoutNullStreams)
 			stdoutBuffer += chunk.toString();
 			if (stdoutBuffer.includes("Recording started")) {
 				cleanup();
-				resolve();
+				const match = stdoutBuffer.match(/^CAPTURE_SIZE:(\d+)x(\d+)\r?$/m);
+				const width = Number(match?.[1]);
+				const height = Number(match?.[2]);
+				resolve({
+					captureSize: width > 0 && height > 0 ? { width, height } : null,
+					systemAudioCaptureUnavailable: /^SYSTEM_AUDIO_CAPTURE_UNAVAILABLE\r?$/m.test(
+						stdoutBuffer,
+					),
+				});
 			}
 		};
 

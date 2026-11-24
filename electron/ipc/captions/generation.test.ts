@@ -1,8 +1,10 @@
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	exec: vi.fn(),
 	readFile: vi.fn(),
+	stat: vi.fn(),
 	rm: vi.fn(),
 	companions: vi.fn(),
 	delay: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock("node:fs/promises", () => ({
 	default: {
 		access: vi.fn().mockResolvedValue(undefined),
 		readFile: mocks.readFile,
+		stat: mocks.stat,
 		rm: mocks.rm,
 	},
 }));
@@ -75,12 +78,27 @@ beforeEach(() => {
 	mocks.readFile
 		.mockReset()
 		.mockImplementation(async (file: string) => (file.endsWith(".json") ? json : srt));
+	mocks.stat.mockReset().mockResolvedValue({ size: 44 + 2 * 32000 });
 	mocks.rm.mockResolvedValue(undefined);
 });
 
-const whisperCalls = () => mocks.exec.mock.calls.filter(([file]) => file === "/whisper");
+const whisperPath = path.resolve("/whisper");
+const whisperCalls = () => mocks.exec.mock.calls.filter(([file]) => file === whisperPath);
 
 describe("caption generation pipeline", () => {
+	it.each([
+		{ minutes: 2, expectedMinutes: 30 },
+		{ minutes: 40, expectedMinutes: 120 },
+	])("gives Whisper $expectedMinutes minutes for $minutes minutes of extracted PCM", async ({
+		minutes,
+		expectedMinutes,
+	}) => {
+		mocks.stat.mockResolvedValue({ size: 44 + minutes * 60 * 32_000 });
+		await generateAutoCaptionsFromVideo(options);
+		expect(whisperCalls()).toHaveLength(1);
+		expect(whisperCalls()[0][2]).toMatchObject({ timeout: expectedMinutes * 60_000 });
+	});
+
 	it("transcribes both sidecars independently, preserving the microphone delay", async () => {
 		mocks.companions.mockResolvedValue([
 			{
@@ -159,7 +177,7 @@ describe("caption generation pipeline", () => {
 
 	it("retries SRT only for a runtime that rejects full JSON", async () => {
 		mocks.exec.mockImplementation(async (file: string, args: string[]) => {
-			if (file === "/whisper" && args.includes("-ojf"))
+			if (file === whisperPath && args.includes("-ojf"))
 				throw new Error("unknown argument: -ojf");
 			return { stderr: "" };
 		});

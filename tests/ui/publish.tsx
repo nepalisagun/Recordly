@@ -3,10 +3,10 @@ import { createRoot } from "react-dom/client";
 import { EditorExportMenu } from "@/components/video-editor/layout/EditorExportMenu";
 import { I18nProvider, useI18n } from "@/contexts/I18nContext";
 import "@/index.css";
+import { CloudShareButton } from "@/components/video-editor/cloud/CloudShareButton";
+import { removeProjectShareLinksByUrl } from "@/components/video-editor/cloud/projectShareLinks";
 import { loadEditorPreferences } from "@/components/video-editor/editorPreferences";
 import { useExportSettings } from "@/components/video-editor/export/useExportSettings";
-import { removeProjectShareLinksByUrl } from "@/components/video-editor/cloud/projectShareLinks";
-import { CloudShareButton } from "@/components/video-editor/cloud/CloudShareButton";
 
 const noop = () => undefined;
 let begunUploadId: string | undefined;
@@ -123,6 +123,7 @@ function Preview() {
 		handleExportDropdownClose: () => setOpen(false),
 		handleCancelExport: () => {
 			document.documentElement.dataset.preparationCanceled = "true";
+			setOpen(false);
 		},
 		handleStartExportFromDropdown: noop,
 		prepareExportForShare: async () => {

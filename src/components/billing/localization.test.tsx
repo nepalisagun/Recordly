@@ -35,6 +35,7 @@ vi.mock("./BillingProvider", () => ({
 vi.mock("@/components/video-editor/cloud/endpoint", () => ({
 	CLOUD_SHARE_ENDPOINT: "https://recordly.test",
 }));
+
 import { EarlyBirdTag } from "./EarlyBirdTag";
 import { LegalLinks } from "./LegalLinks";
 import { PlusFeatureDetails } from "./PlusFeatureDetails";
@@ -104,7 +105,7 @@ describe.each(SUPPORTED_LOCALES)("billing UI in %s", (locale) => {
 		expect(markup).toContain(active.messages.testimonials);
 		if (locale !== "en") {
 			expect(markup).not.toContain(
-				"Commercial use requires an active Recordly Cloud subscription.",
+				"Commercial use requires an active Recordly Plus subscription.",
 			);
 			expect(markup).not.toContain("Community testimonials");
 		}

@@ -1,12 +1,12 @@
 import { type ComponentProps, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { loadEditorPreferences } from "@/components/video-editor/editorPreferences";
-import type { ExportProgress } from "@/lib/exporter";
 import { useExportSession } from "@/components/video-editor/export/useExportSession";
 import { useExportSettings } from "@/components/video-editor/export/useExportSettings";
 import { useExportStatusViewModel } from "@/components/video-editor/export/useExportStatusViewModel";
 import { EditorExportMenu } from "@/components/video-editor/layout/EditorExportMenu";
 import { I18nProvider, useI18n } from "@/contexts/I18nContext";
+import type { ExportProgress } from "@/lib/exporter";
 import "@/index.css";
 
 window.electronAPI = {
@@ -54,8 +54,7 @@ function Fixture() {
 		exportSettings.setExportPipelineModel(query.has("legacy") ? "legacy" : "modern");
 		if (query.has("gif")) exportSettings.setExportFormat("gif");
 		exportSession.setShowExportDropdown(true);
-		exportSession.setIsExporting(!query.has("saved") && !query.has("link"));
-		if (query.has("saved")) exportSession.setExportedFilePath("/tmp/export.gif");
+		exportSession.setIsExporting(!query.has("link"));
 		exportSession.setIsOptimizingGif(query.has("optimizing"));
 		exportSession.setExportProgress({
 			phase: query.has("preparing")
@@ -82,12 +81,24 @@ function Fixture() {
 		exportSettings.setExportFormat,
 		exportSession.setShowExportDropdown,
 		exportSession.setIsExporting,
-		exportSession.setExportedFilePath,
 		exportSession.setIsOptimizingGif,
 		exportSession.setExportProgress,
 	]);
 	return (
 		<main className="p-8 flex justify-end">
+			{query.has("finish-save") && (
+				<button
+					type="button"
+					onClick={() => {
+						exportSession.setExportedFilePath(
+							`/tmp/export.${exportSettings.exportFormat}`,
+						);
+						exportSession.setIsExporting(false);
+					}}
+				>
+					Finish saving
+				</button>
+			)}
 			<button
 				type="button"
 				onClick={() => {
@@ -130,6 +141,9 @@ function Fixture() {
 				handleRetrySaveExport={() => undefined}
 				handleStartExportFromDropdown={() => undefined}
 				revealExportedFile={() => undefined}
+				onRecordNew={() => {
+					document.documentElement.dataset.recordNew = "true";
+				}}
 				projectTitle="Fixture"
 				authToken={query.has("signed-out") ? undefined : "fixture"}
 				accountId={query.has("signed-out") ? undefined : "fixture-account"}

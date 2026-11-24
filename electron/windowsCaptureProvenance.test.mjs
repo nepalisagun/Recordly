@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -51,6 +51,27 @@ describe("Windows capture provenance gate", () => {
 		const { options } = fixture();
 		writeFileSync(options.binaryPath, "unverified executable");
 		expect(() => assertNativeHelperManifest(options)).toThrow("binary hash mismatch");
+	});
+	it("requires a rebuild after shared bt709_video.h changes", async () => {
+		const { options } = fixture();
+		const sharedHeaderPath = path.join(
+			options.projectRoot,
+			"electron/native/common/bt709_video.h",
+		);
+		mkdirSync(path.dirname(sharedHeaderPath), { recursive: true });
+		writeFileSync(sharedHeaderPath, "initial bt709 converter");
+		updateNativeHelperManifest(options);
+		expect(assertNativeHelperManifest(options).ok).toBe(true);
+
+		writeFileSync(sharedHeaderPath, "updated SIMD bt709 converter");
+		expect(() => assertNativeHelperManifest(options)).toThrow("source fingerprint mismatch");
+		await expect(
+			beforePack({
+				packager: { projectDir: options.projectRoot },
+				arch: 1,
+				electronPlatformName: "win32",
+			}),
+		).rejects.toThrow("Rebuild the helper from current source on Windows before packaging");
 	});
 	it.each([
 		"x64",
