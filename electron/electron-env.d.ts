@@ -251,7 +251,6 @@ interface Window {
 		hudOverlayDrag: (phase: "start" | "move" | "end", screenX: number, screenY: number) => void;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
-		onHudOverlayRestored: (callback: () => void) => () => void;
 		getEditorMode: () => Promise<boolean>;
 		onEditorModeChanged: (callback: (inEditor: boolean) => void) => () => void;
 		hudOverlayRendererReady: () => void;
@@ -326,6 +325,7 @@ interface Window {
 				capturesMicrophone?: boolean;
 				microphoneDeviceId?: string;
 				microphoneLabel?: string;
+				startLinuxCapturePaused?: boolean;
 			},
 		) => Promise<{
 			success: boolean;
@@ -333,6 +333,7 @@ interface Window {
 			message?: string;
 			error?: string;
 			userNotified?: boolean;
+			captureCancelled?: boolean;
 			microphoneFallbackRequired?: boolean;
 			systemAudioCaptureUnavailable?: boolean;
 		}>;
@@ -796,6 +797,7 @@ interface Window {
 			path?: string;
 			message?: string;
 			captionSidecarFailed?: boolean;
+			error?: string;
 			canceled?: boolean;
 		}>;
 		writeExportedVideoToPath: (
@@ -1101,6 +1103,7 @@ interface Window {
 		listProjectFiles: () => Promise<{
 			success: boolean;
 			projectsDir?: string | null;
+			warning?: string;
 			entries: Array<{
 				path: string;
 				name: string;
@@ -1304,6 +1307,7 @@ interface Window {
 		setExportInProgress: (active: boolean) => void;
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean>) => () => void;
 		isNativeWindowsCaptureAvailable: () => Promise<{ available: boolean }>;
+		isNativeLinuxPortalCaptureAvailable: () => Promise<{ available: boolean }>;
 		muxNativeWindowsRecording: (expectedDurationMs?: number) => Promise<{
 			success: boolean;
 			path?: string;
@@ -1315,7 +1319,9 @@ interface Window {
 		appendExportDiagnostic: (entry: string) => Promise<{ success: boolean }>;
 		getExportDiagnostics: () => Promise<{ success: boolean; logs: string[] }>;
 		appendAppDiagnostics: (entries: string[]) => Promise<{ success: boolean }>;
-		recordOperationDiagnostic: (event: import("../src/shared/operationDiagnostics").OperationEvent) => void;
+		recordOperationDiagnostic: (
+			event: import("../src/shared/operationDiagnostics").OperationEvent,
+		) => void;
 		getAppDiagnostics: () => Promise<{
 			success: boolean;
 			logs: string[];
@@ -1412,6 +1418,8 @@ interface CursorTelemetryPoint {
 	timeMs: number;
 	cx: number;
 	cy: number;
+	/** Compositor visibility transition. Missing values retain the current state. */
+	cursorVisible?: boolean;
 	pressure?: number;
 	interactionType?:
 		| "move"
